@@ -665,6 +665,26 @@ def clear_cache():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@app.route("/api/reset-schema", methods=["POST"])
+def reset_schema():
+    """Reset the database schema (drops all documents and chunks)."""
+    global _schema_initialized
+    try:
+        conn = get_pg_connection()
+        cur = conn.cursor()
+        cur.execute("DROP TABLE IF EXISTS chunks CASCADE")
+        cur.execute("DROP TABLE IF EXISTS documents CASCADE")
+        cur.execute("DROP TABLE IF EXISTS chat_history CASCADE")
+        conn.commit()
+        cur.close()
+        conn.close()
+        _schema_initialized = False
+        init_schema()
+        return jsonify({"status": "ok", "message": f"Schema reset with {EMBEDDING_DIMENSIONS} dimensions"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/search", methods=["POST"])
 def search():
     """Direct semantic search endpoint."""
