@@ -45,7 +45,7 @@ def get_spaces_client():
 def call_inference(messages):
     """
     Call inference endpoint.
-    Supports custom GenAI endpoint or falls back to echo mode for demo.
+    Supports DigitalOcean GenAI agents or any OpenAI-compatible endpoint.
     """
     custom_endpoint = os.environ.get("GENAI_ENDPOINT", "")
     custom_key = os.environ.get("GENAI_API_KEY", "")
@@ -66,35 +66,58 @@ def call_inference(messages):
         if model:
             payload["model"] = model
         
-        try:
-            response = requests.post(
-                f"{custom_endpoint.rstrip('/')}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60
-            )
-            
-            if response.status_code != 200:
-                return f"API error ({response.status_code}): {response.text[:200]}"
-            
-            data = response.json()
-            
-            if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0].get("message", {}).get("content", "No content in response")
-            elif "error" in data:
-                return f"API error: {data['error']}"
-            else:
-                return f"Unexpected response format: {str(data)[:200]}"
+        base_url = custom_endpoint.rstrip('/')
+        
+        paths_to_try = [
+            "/api/v1/chat/completions",
+            "/v1/chat/completions", 
+            "/chat/completions",
+            ""
+        ]
+        
+        last_error = None
+        for path in paths_to_try:
+            try:
+                url = f"{base_url}{path}"
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=60
+                )
                 
-        except requests.exceptions.Timeout:
-            return "Request timed out. The model may be loading - please try again."
-        except requests.exceptions.RequestException as e:
-            return f"Request failed: {str(e)}"
-        except Exception as e:
-            return f"Inference error: {str(e)}"
+                if response.status_code == 404:
+                    last_error = f"404 at {path}"
+                    continue
+                
+                if response.status_code != 200:
+                    return f"API error ({response.status_code}): {response.text[:300]}"
+                
+                data = response.json()
+                
+                if "choices" in data and len(data["choices"]) > 0:
+                    return data["choices"][0].get("message", {}).get("content", "No content in response")
+                elif "response" in data:
+                    return data["response"]
+                elif "output" in data:
+                    return data["output"]
+                elif "error" in data:
+                    return f"API error: {data['error']}"
+                else:
+                    return f"Unexpected response: {str(data)[:300]}"
+                    
+            except requests.exceptions.Timeout:
+                return "Request timed out. The model may be loading - please try again."
+            except requests.exceptions.RequestException as e:
+                last_error = str(e)
+                continue
+            except Exception as e:
+                return f"Inference error: {str(e)}"
+        
+        return f"Could not connect to GenAI endpoint. Tried multiple paths. Last error: {last_error}"
     
     user_message = messages[-1].get("content", "") if messages else ""
-    return f"[Demo Mode - No GenAI configured] You said: {user_message}\n\nTo enable AI responses, configure GENAI_ENDPOINT and GENAI_API_KEY in your App Platform environment variables."
+    return f"[Demo Mode] You said: {user_message}\n\nTo enable AI, set GENAI_ENDPOINT and GENAI_API_KEY."
 
 def get_cache_key(message):
     """Generate cache key from message."""
