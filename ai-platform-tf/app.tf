@@ -25,6 +25,12 @@ resource "digitalocean_app" "ai_app" {
 
       source_dir = "/ai-starter-kit-app"
 
+      # Knowledge Base Configuration
+      env {
+        key   = "KB_UUID"
+        value = var.kb_uuid
+      }
+
       # Inference Configuration
       env {
         key   = "GENAI_ENDPOINT"

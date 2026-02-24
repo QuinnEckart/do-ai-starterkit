@@ -1,7 +1,6 @@
 import os
 import hashlib
 import json
-import re
 from flask import Flask, render_template, request, jsonify
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -13,58 +12,11 @@ import requests
 app = Flask(__name__)
 
 # =============================================================================
-# CONFIGURATION (all from environment, with sensible defaults)
+# CONFIGURATION
 # =============================================================================
 
-CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", 512))
-CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 64))
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", 5))
-EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", 1024))
-
-# =============================================================================
-# DATABASE SCHEMA (auto-created on first request)
-# =============================================================================
-
-SCHEMA_SQL = """
-CREATE EXTENSION IF NOT EXISTS vector;
-
-CREATE TABLE IF NOT EXISTS documents (
-    id SERIAL PRIMARY KEY,
-    filename TEXT NOT NULL,
-    content TEXT,
-    file_type TEXT,
-    metadata JSONB DEFAULT '{{}}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS chunks (
-    id SERIAL PRIMARY KEY,
-    document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
-    content TEXT NOT NULL,
-    embedding vector({dimensions}),
-    chunk_index INTEGER,
-    metadata JSONB DEFAULT '{{}}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS chat_history (
-    id SERIAL PRIMARY KEY,
-    user_message TEXT,
-    assistant_response TEXT,
-    sources JSONB DEFAULT '[]',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'chunks_embedding_idx') THEN
-        CREATE INDEX chunks_embedding_idx ON chunks 
-        USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-    END IF;
-END $$;
-""".format(dimensions=EMBEDDING_DIMENSIONS)
-
-_schema_initialized = False
+RAG_ALPHA = float(os.environ.get("RAG_ALPHA", 0.5))
 
 # =============================================================================
 # CONNECTION HELPERS
@@ -88,164 +40,79 @@ def get_valkey_client():
         ssl=True
     )
 
-def get_spaces_client():
-    session = boto3.session.Session()
-    return session.client(
-        "s3",
-        region_name=os.environ.get("SPACES_REGION", "nyc3"),
-        endpoint_url=f"https://{os.environ.get('SPACES_REGION', 'nyc3')}.digitaloceanspaces.com",
-        aws_access_key_id=os.environ.get("SPACES_ACCESS_KEY"),
-        aws_secret_access_key=os.environ.get("SPACES_SECRET_KEY"),
-        config=Config(signature_version="s3v4")
-    )
-
-def init_schema():
-    global _schema_initialized
-    if _schema_initialized:
-        return True
+def init_db():
+    """Initialize chat history table."""
     try:
         conn = get_pg_connection()
         cur = conn.cursor()
-        cur.execute(SCHEMA_SQL)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id SERIAL PRIMARY KEY,
+                user_message TEXT,
+                assistant_response TEXT,
+                sources JSONB DEFAULT '[]',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         conn.commit()
         cur.close()
         conn.close()
-        _schema_initialized = True
         return True
     except Exception as e:
-        app.logger.error(f"Schema init failed: {e}")
+        app.logger.error(f"DB init failed: {e}")
         return False
 
 # =============================================================================
-# EMBEDDING HELPERS
+# DIGITALOCEAN KNOWLEDGE BASE API
 # =============================================================================
 
-def get_embedding(text):
-    """Generate embedding for text using configured endpoint."""
-    endpoint = os.environ.get("EMBEDDING_ENDPOINT") or os.environ.get("GENAI_ENDPOINT", "")
-    api_key = os.environ.get("EMBEDDING_API_KEY") or os.environ.get("GENAI_API_KEY", "")
-    model = os.environ.get("EMBEDDING_MODEL", "bge-large-en-v1.5")
+def retrieve_from_do_kb(query, top_k=RAG_TOP_K, alpha=RAG_ALPHA):
+    """
+    Retrieve relevant chunks from DigitalOcean Knowledge Base API.
+    https://kbaas.do-ai.run/v1/<kb-uuid>/retrieve
+    """
+    kb_uuid = os.environ.get("KB_UUID", "")
+    do_token = os.environ.get("DO_API_TOKEN", "")
     
-    if not endpoint or not api_key:
-        app.logger.warning("Embedding not configured: missing endpoint or API key")
-        return None
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    base_url = endpoint.rstrip('/')
-    paths_to_try = ["/v1/embeddings", "/api/v1/embeddings", "/embeddings", ""]
-    last_error = None
-    
-    for path in paths_to_try:
-        try:
-            url = f"{base_url}{path}"
-            app.logger.info(f"Trying embedding endpoint: {url}")
-            response = requests.post(
-                url,
-                headers=headers,
-                json={"input": text, "model": model},
-                timeout=30
-            )
-            
-            if response.status_code == 404:
-                last_error = f"404 at {url}"
-                continue
-            
-            if response.status_code != 200:
-                last_error = f"{response.status_code}: {response.text[:200]}"
-                app.logger.error(f"Embedding API error at {url}: {last_error}")
-                continue
-                
-            data = response.json()
-            if "data" in data and len(data["data"]) > 0:
-                app.logger.info(f"Embedding successful via {url}")
-                return data["data"][0].get("embedding")
-            elif "embedding" in data:
-                app.logger.info(f"Embedding successful via {url}")
-                return data["embedding"]
-            else:
-                last_error = f"Unexpected response format: {str(data)[:100]}"
-                app.logger.error(f"Embedding response format error: {last_error}")
-        except Exception as e:
-            last_error = str(e)
-            app.logger.error(f"Embedding exception at {url}: {e}")
-            continue
-    
-    app.logger.error(f"All embedding endpoints failed. Last error: {last_error}")
-    return None
-
-# =============================================================================
-# CHUNKING HELPERS
-# =============================================================================
-
-def chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
-    """Split text into overlapping chunks, respecting sentence boundaries."""
-    sentences = re.split(r'(?<=[.!?])\s+', text)
-    chunks = []
-    current_chunk = []
-    current_length = 0
-    
-    for sentence in sentences:
-        sentence_length = len(sentence.split())
-        
-        if current_length + sentence_length > chunk_size and current_chunk:
-            chunks.append(' '.join(current_chunk))
-            overlap_words = []
-            overlap_length = 0
-            for s in reversed(current_chunk):
-                s_len = len(s.split())
-                if overlap_length + s_len <= overlap:
-                    overlap_words.insert(0, s)
-                    overlap_length += s_len
-                else:
-                    break
-            current_chunk = overlap_words
-            current_length = overlap_length
-        
-        current_chunk.append(sentence)
-        current_length += sentence_length
-    
-    if current_chunk:
-        chunks.append(' '.join(current_chunk))
-    
-    return chunks
-
-# =============================================================================
-# RAG RETRIEVAL
-# =============================================================================
-
-def retrieve_context(query, top_k=RAG_TOP_K):
-    """Retrieve relevant chunks for a query using vector similarity."""
-    query_embedding = get_embedding(query)
-    
-    if not query_embedding:
+    if not kb_uuid or not do_token:
+        app.logger.warning("KB_UUID or DO_API_TOKEN not configured")
         return []
     
+    url = f"https://kbaas.do-ai.run/v1/{kb_uuid}/retrieve"
+    headers = {
+        "Authorization": f"Bearer {do_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "query": query,
+        "num_results": top_k,
+        "alpha": alpha
+    }
+    
     try:
-        conn = get_pg_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        app.logger.info(f"Querying DO KB: {kb_uuid}")
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
         
-        embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
+        if response.status_code != 200:
+            app.logger.error(f"DO KB API error: {response.status_code} - {response.text[:200]}")
+            return []
         
-        cur.execute("""
-            SELECT c.content, c.chunk_index, d.filename, d.id as document_id,
-                   1 - (c.embedding <=> %s::vector) as similarity
-            FROM chunks c
-            JOIN documents d ON c.document_id = d.id
-            ORDER BY c.embedding <=> %s::vector
-            LIMIT %s
-        """, (embedding_str, embedding_str, top_k))
+        data = response.json()
+        results = data.get("results", [])
         
-        results = cur.fetchall()
-        cur.close()
-        conn.close()
+        formatted = []
+        for r in results:
+            formatted.append({
+                "content": r.get("text_content", ""),
+                "source": r.get("metadata", {}).get("item_name", "Unknown"),
+                "metadata": r.get("metadata", {})
+            })
         
-        return [dict(r) for r in results]
+        app.logger.info(f"Retrieved {len(formatted)} chunks from DO KB")
+        return formatted
+        
     except Exception as e:
-        app.logger.error(f"Retrieval error: {e}")
+        app.logger.error(f"DO KB retrieve error: {e}")
         return []
 
 # =============================================================================
@@ -253,7 +120,7 @@ def retrieve_context(query, top_k=RAG_TOP_K):
 # =============================================================================
 
 def call_inference(messages):
-    """Call inference endpoint with optional RAG context."""
+    """Call GenAI endpoint for chat completion."""
     endpoint = os.environ.get("GENAI_ENDPOINT", "")
     api_key = os.environ.get("GENAI_API_KEY", "")
     model = os.environ.get("DEFAULT_MODEL", "")
@@ -295,27 +162,28 @@ def call_inference(messages):
                 return f"Unexpected response: {str(data)[:300]}"
         except requests.exceptions.Timeout:
             return "Request timed out. Please try again."
-        except Exception as e:
+        except Exception:
             continue
     
     return "Could not connect to GenAI endpoint."
 
-def get_cache_key(message):
-    return f"chat:{hashlib.md5(message.encode()).hexdigest()}"
+def get_cache_key(message, use_rag):
+    return f"chat:{hashlib.md5((message + str(use_rag)).encode()).hexdigest()}"
 
 # =============================================================================
-# ROUTES: CORE
+# ROUTES
 # =============================================================================
 
 @app.route("/")
 def index():
-    init_schema()
+    init_db()
     return render_template("index.html")
 
 @app.route("/health")
 def health():
     status = {"status": "healthy", "components": {}}
     
+    # PostgreSQL
     try:
         conn = get_pg_connection()
         cur = conn.cursor()
@@ -327,17 +195,7 @@ def health():
         status["components"]["postgres"] = f"error: {str(e)[:100]}"
         status["status"] = "degraded"
     
-    try:
-        cur = get_pg_connection().cursor()
-        cur.execute("SELECT extname FROM pg_extension WHERE extname = 'vector'")
-        if cur.fetchone():
-            status["components"]["pgvector"] = "enabled"
-        else:
-            status["components"]["pgvector"] = "not enabled"
-        cur.close()
-    except Exception:
-        status["components"]["pgvector"] = "unknown"
-    
+    # Valkey
     try:
         vk = get_valkey_client()
         vk.ping()
@@ -346,85 +204,26 @@ def health():
         status["components"]["valkey"] = f"error: {str(e)[:100]}"
         status["status"] = "degraded"
     
-    try:
-        s3 = get_spaces_client()
-        bucket = os.environ.get("SPACES_BUCKET")
-        if bucket:
-            s3.head_bucket(Bucket=bucket)
-            status["components"]["spaces"] = "connected"
-        else:
-            status["components"]["spaces"] = "not configured"
-    except Exception as e:
-        status["components"]["spaces"] = f"error: {str(e)[:100]}"
-        status["status"] = "degraded"
-    
+    # GenAI Inference
     if os.environ.get("GENAI_ENDPOINT") and os.environ.get("GENAI_API_KEY"):
         status["components"]["inference"] = "configured"
     else:
         status["components"]["inference"] = "demo mode"
     
-    if os.environ.get("EMBEDDING_ENDPOINT") or os.environ.get("GENAI_ENDPOINT"):
-        status["components"]["embeddings"] = "configured"
+    # DO Knowledge Base
+    kb_uuid = os.environ.get("KB_UUID", "")
+    if kb_uuid:
+        status["components"]["knowledge_base"] = "configured"
+        status["knowledge_base"] = {"uuid": kb_uuid[:8] + "..."}
     else:
-        status["components"]["embeddings"] = "not configured"
-    
-    try:
-        conn = get_pg_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM documents")
-        doc_count = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM chunks")
-        chunk_count = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM chunks WHERE embedding IS NOT NULL")
-        embedded_count = cur.fetchone()[0]
-        cur.close()
-        conn.close()
-        status["knowledge_base"] = {
-            "documents": doc_count, 
-            "chunks": chunk_count,
-            "chunks_with_embeddings": embedded_count,
-            "rag_ready": embedded_count > 0
-        }
-    except Exception:
-        status["knowledge_base"] = {"documents": 0, "chunks": 0, "chunks_with_embeddings": 0, "rag_ready": False}
+        status["components"]["knowledge_base"] = "not configured"
+        status["knowledge_base"] = {"uuid": None}
     
     return jsonify(status)
 
-
-@app.route("/api/test-embedding", methods=["POST"])
-def test_embedding():
-    """Test if the embedding endpoint is working."""
-    data = request.get_json() or {}
-    test_text = data.get("text", "This is a test sentence for embedding.")
-    
-    endpoint = os.environ.get("EMBEDDING_ENDPOINT") or os.environ.get("GENAI_ENDPOINT", "")
-    model = os.environ.get("EMBEDDING_MODEL", "bge-large-en-v1.5")
-    
-    result = {
-        "endpoint": endpoint[:50] + "..." if len(endpoint) > 50 else endpoint,
-        "model": model,
-        "test_text": test_text[:50] + "..." if len(test_text) > 50 else test_text,
-    }
-    
-    embedding = get_embedding(test_text)
-    
-    if embedding:
-        result["status"] = "success"
-        result["embedding_dimensions"] = len(embedding)
-        result["sample"] = embedding[:5]
-    else:
-        result["status"] = "failed"
-        result["error"] = "Could not generate embedding. Check logs for details."
-    
-    return jsonify(result)
-
-# =============================================================================
-# ROUTES: RAG CHAT
-# =============================================================================
-
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    init_schema()
+    init_db()
     data = request.get_json()
     user_message = data.get("message", "").strip()
     use_rag = data.get("use_rag", True)
@@ -432,8 +231,9 @@ def chat():
     if not user_message:
         return jsonify({"error": "Message is required"}), 400
     
-    cache_key = get_cache_key(user_message + str(use_rag))
+    cache_key = get_cache_key(user_message, use_rag)
     
+    # Check cache
     try:
         vk = get_valkey_client()
         cached = vk.get(cache_key)
@@ -443,22 +243,25 @@ def chat():
     except Exception:
         pass
     
+    # Retrieve context from DO Knowledge Base
     sources = []
     context_text = ""
     
     if use_rag:
-        contexts = retrieve_context(user_message)
-        if contexts:
+        chunks = retrieve_from_do_kb(user_message)
+        if chunks:
             context_parts = []
-            for i, ctx in enumerate(contexts):
-                context_parts.append(f"[{i+1}] From '{ctx['filename']}':\n{ctx['content']}")
+            for i, chunk in enumerate(chunks):
+                source_name = chunk.get("source", "Unknown")
+                content = chunk.get("content", "")
+                context_parts.append(f"[{i+1}] From '{source_name}':\n{content}")
                 sources.append({
-                    "filename": ctx["filename"],
-                    "chunk_index": ctx["chunk_index"],
-                    "similarity": round(ctx["similarity"], 3) if ctx.get("similarity") else None
+                    "source": source_name,
+                    "preview": content[:100] + "..." if len(content) > 100 else content
                 })
             context_text = "\n\n".join(context_parts)
     
+    # Build prompt
     if context_text:
         system_prompt = """You are a helpful AI assistant with access to a knowledge base.
 Answer questions based on the provided context. If the context doesn't contain relevant information, say so and provide a general answer.
@@ -478,6 +281,7 @@ Context from knowledge base:
     
     result = {"response": response_text, "sources": sources, "cached": False}
     
+    # Cache response
     try:
         vk = get_valkey_client()
         cache_ttl = int(os.environ.get("CACHE_TTL_SECONDS", 3600))
@@ -485,6 +289,7 @@ Context from knowledge base:
     except Exception:
         pass
     
+    # Save to history
     try:
         conn = get_pg_connection()
         cur = conn.cursor()
@@ -500,132 +305,33 @@ Context from knowledge base:
     
     return jsonify(result)
 
-# =============================================================================
-# ROUTES: DOCUMENT MANAGEMENT
-# =============================================================================
-
-@app.route("/api/documents", methods=["GET"])
-def list_documents():
-    init_schema()
-    try:
-        conn = get_pg_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("""
-            SELECT d.id, d.filename, d.file_type, d.created_at,
-                   COUNT(c.id) as chunk_count
-            FROM documents d
-            LEFT JOIN chunks c ON d.id = c.document_id
-            GROUP BY d.id
-            ORDER BY d.created_at DESC
-        """)
-        docs = [dict(r) for r in cur.fetchall()]
-        for doc in docs:
-            if doc.get("created_at"):
-                doc["created_at"] = doc["created_at"].isoformat()
-        cur.close()
-        conn.close()
-        return jsonify({"documents": docs})
-    except Exception as e:
-        return jsonify({"error": str(e), "documents": []})
-
-@app.route("/api/documents", methods=["POST"])
-def upload_document():
-    init_schema()
+@app.route("/api/test-kb", methods=["POST"])
+def test_kb():
+    """Test the DO Knowledge Base connection."""
+    kb_uuid = os.environ.get("KB_UUID", "")
+    do_token = os.environ.get("DO_API_TOKEN", "")
     
-    if "file" not in request.files:
-        return jsonify({"error": "No file provided"}), 400
+    result = {
+        "kb_uuid": kb_uuid[:8] + "..." if kb_uuid else None,
+        "token_configured": bool(do_token)
+    }
     
-    file = request.files["file"]
-    if not file.filename:
-        return jsonify({"error": "No filename"}), 400
+    if not kb_uuid or not do_token:
+        result["status"] = "not_configured"
+        result["error"] = "KB_UUID or DO_API_TOKEN not set"
+        return jsonify(result)
     
-    filename = file.filename
-    content = file.read().decode("utf-8", errors="ignore")
+    # Test with a simple query
+    chunks = retrieve_from_do_kb("test query", top_k=1)
     
-    if not content.strip():
-        return jsonify({"error": "File is empty"}), 400
+    if chunks:
+        result["status"] = "success"
+        result["sample_result"] = chunks[0].get("source", "Unknown")
+    else:
+        result["status"] = "no_results"
+        result["message"] = "KB connected but no results returned. This could be normal if KB is empty."
     
-    file_type = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
-    
-    try:
-        s3 = get_spaces_client()
-        bucket = os.environ.get("SPACES_BUCKET")
-        if bucket:
-            s3.put_object(Bucket=bucket, Key=f"documents/{filename}", Body=content.encode())
-    except Exception as e:
-        app.logger.warning(f"Failed to upload to Spaces: {e}")
-    
-    try:
-        conn = get_pg_connection()
-        cur = conn.cursor()
-        
-        cur.execute(
-            "INSERT INTO documents (filename, content, file_type) VALUES (%s, %s, %s) RETURNING id",
-            (filename, content, file_type)
-        )
-        doc_id = cur.fetchone()[0]
-        
-        chunks = chunk_text(content)
-        chunks_with_embeddings = 0
-        
-        for i, chunk_content in enumerate(chunks):
-            embedding = get_embedding(chunk_content)
-            
-            if embedding:
-                embedding_str = '[' + ','.join(map(str, embedding)) + ']'
-                cur.execute(
-                    "INSERT INTO chunks (document_id, content, embedding, chunk_index) VALUES (%s, %s, %s::vector, %s)",
-                    (doc_id, chunk_content, embedding_str, i)
-                )
-                chunks_with_embeddings += 1
-            else:
-                cur.execute(
-                    "INSERT INTO chunks (document_id, content, chunk_index) VALUES (%s, %s, %s)",
-                    (doc_id, chunk_content, i)
-                )
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        return jsonify({
-            "status": "ok",
-            "document_id": doc_id,
-            "filename": filename,
-            "chunks_created": len(chunks),
-            "chunks_embedded": chunks_with_embeddings
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/documents/<int:doc_id>", methods=["DELETE"])
-def delete_document(doc_id):
-    try:
-        conn = get_pg_connection()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM documents WHERE id = %s RETURNING filename", (doc_id,))
-        result = cur.fetchone()
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        if result:
-            try:
-                s3 = get_spaces_client()
-                bucket = os.environ.get("SPACES_BUCKET")
-                if bucket:
-                    s3.delete_object(Bucket=bucket, Key=f"documents/{result[0]}")
-            except Exception:
-                pass
-            return jsonify({"status": "ok", "deleted": result[0]})
-        else:
-            return jsonify({"error": "Document not found"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# =============================================================================
-# ROUTES: UTILITIES
-# =============================================================================
+    return jsonify(result)
 
 @app.route("/api/history", methods=["GET"])
 def history():
@@ -664,40 +370,6 @@ def clear_cache():
         return jsonify({"status": "ok", "cleared": len(keys)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/reset-schema", methods=["POST"])
-def reset_schema():
-    """Reset the database schema (drops all documents and chunks)."""
-    global _schema_initialized
-    try:
-        conn = get_pg_connection()
-        cur = conn.cursor()
-        cur.execute("DROP TABLE IF EXISTS chunks CASCADE")
-        cur.execute("DROP TABLE IF EXISTS documents CASCADE")
-        cur.execute("DROP TABLE IF EXISTS chat_history CASCADE")
-        conn.commit()
-        cur.close()
-        conn.close()
-        _schema_initialized = False
-        init_schema()
-        return jsonify({"status": "ok", "message": f"Schema reset with {EMBEDDING_DIMENSIONS} dimensions"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/search", methods=["POST"])
-def search():
-    """Direct semantic search endpoint."""
-    init_schema()
-    data = request.get_json()
-    query = data.get("query", "").strip()
-    top_k = data.get("top_k", RAG_TOP_K)
-    
-    if not query:
-        return jsonify({"error": "Query is required"}), 400
-    
-    results = retrieve_context(query, top_k)
-    return jsonify({"results": results, "query": query})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
