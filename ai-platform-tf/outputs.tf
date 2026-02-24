@@ -23,6 +23,11 @@ output "spaces_bucket_id" {
   value       = digitalocean_spaces_bucket.bucket.id
 }
 
+output "spaces_bucket_name" {
+  description = "Name of the created Spaces bucket."
+  value       = digitalocean_spaces_bucket.bucket.name
+}
+
 output "postgres_host" {
   description = "PostgreSQL cluster host."
   value       = digitalocean_database_cluster.pg.host
@@ -31,4 +36,23 @@ output "postgres_host" {
 output "valkey_host" {
   description = "Valkey cluster host."
   value       = digitalocean_database_cluster.valkey.host
+}
+
+output "quick_start" {
+  description = "Quick start instructions."
+  value       = <<-EOT
+    
+    ✅ Your AI Platform is deployed!
+    
+    🌐 App URL: ${digitalocean_app.ai_app.live_url}
+    
+    Next steps:
+    1. Open the app URL in your browser
+    2. Go to "Knowledge Base" tab
+    3. Upload your documents (.txt, .md, .json, .csv, .html)
+    4. Start asking questions in the Chat tab!
+    
+    📚 Documents are automatically chunked and embedded for semantic search.
+    
+  EOT
 }

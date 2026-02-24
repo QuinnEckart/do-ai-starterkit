@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Platform Chat</title>
+    <title>AI Platform - Knowledge Assistant</title>
     <style>
         * {
             margin: 0;
@@ -23,39 +23,45 @@
 
         .container {
             width: 100%;
-            max-width: 800px;
+            max-width: 900px;
             background: #fff;
             border-radius: 16px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            height: 90vh;
-            max-height: 700px;
+            height: 95vh;
+            max-height: 800px;
         }
 
         .header {
             background: linear-gradient(135deg, #0061ff, #0040a0);
             color: white;
-            padding: 20px;
+            padding: 16px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
         .header h1 {
-            font-size: 1.5rem;
+            font-size: 1.3rem;
             font-weight: 600;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
         .status-badge {
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 0.85rem;
+            gap: 6px;
+            font-size: 0.8rem;
             background: rgba(255,255,255,0.15);
-            padding: 6px 12px;
-            border-radius: 20px;
+            padding: 5px 10px;
+            border-radius: 16px;
         }
 
         .status-dot {
@@ -65,10 +71,43 @@
             background: #4ade80;
         }
 
-        .status-dot.error {
-            background: #f87171;
+        .status-dot.error { background: #f87171; }
+
+        .tabs {
+            display: flex;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
         }
 
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #64748b;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab:hover { color: #0061ff; }
+        .tab.active {
+            color: #0061ff;
+            border-bottom-color: #0061ff;
+            background: white;
+        }
+
+        .tab-content {
+            display: none;
+            flex: 1;
+            overflow: hidden;
+            flex-direction: column;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        /* Chat Tab */
         .chat-area {
             flex: 1;
             overflow-y: auto;
@@ -82,19 +121,15 @@
             flex-direction: column;
         }
 
-        .message.user {
-            align-items: flex-end;
-        }
-
-        .message.assistant {
-            align-items: flex-start;
-        }
+        .message.user { align-items: flex-end; }
+        .message.assistant { align-items: flex-start; }
 
         .message-bubble {
-            max-width: 75%;
+            max-width: 80%;
             padding: 12px 16px;
             border-radius: 16px;
-            line-height: 1.5;
+            line-height: 1.6;
+            white-space: pre-wrap;
         }
 
         .message.user .message-bubble {
@@ -115,58 +150,87 @@
             color: #94a3b8;
             margin-top: 4px;
             padding: 0 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        .cached-badge {
-            background: #fef3c7;
-            color: #92400e;
+        .badge {
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 0.7rem;
-            margin-left: 8px;
         }
+
+        .badge.cached { background: #fef3c7; color: #92400e; }
+        .badge.sources { background: #dbeafe; color: #1e40af; }
+
+        .sources-list {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+
+        .sources-list strong { color: #334155; }
 
         .input-area {
-            padding: 20px;
+            padding: 16px 20px;
             background: white;
             border-top: 1px solid #e2e8f0;
-            display: flex;
-            gap: 12px;
         }
 
-        .input-area input {
+        .input-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .input-area input[type="text"] {
             flex: 1;
-            padding: 14px 18px;
+            padding: 12px 16px;
             border: 2px solid #e2e8f0;
-            border-radius: 12px;
-            font-size: 1rem;
+            border-radius: 10px;
+            font-size: 0.95rem;
             outline: none;
             transition: border-color 0.2s;
         }
 
-        .input-area input:focus {
+        .input-area input[type="text"]:focus {
             border-color: #0061ff;
         }
 
         .input-area button {
-            padding: 14px 28px;
+            padding: 12px 24px;
             background: #0061ff;
             color: white;
             border: none;
-            border-radius: 12px;
-            font-size: 1rem;
+            border-radius: 10px;
+            font-size: 0.95rem;
             font-weight: 600;
             cursor: pointer;
             transition: background 0.2s;
         }
 
-        .input-area button:hover {
-            background: #0050dd;
+        .input-area button:hover { background: #0050dd; }
+        .input-area button:disabled { background: #94a3b8; cursor: not-allowed; }
+
+        .input-options {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: #64748b;
         }
 
-        .input-area button:disabled {
-            background: #94a3b8;
-            cursor: not-allowed;
+        .input-options label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
         }
 
         .typing-indicator {
@@ -206,8 +270,135 @@
             margin-bottom: 8px;
         }
 
+        /* Documents Tab */
+        .documents-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f8fafc;
+        }
+
+        .upload-zone {
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            background: white;
+            margin-bottom: 20px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #0061ff;
+            background: #f0f7ff;
+        }
+
+        .upload-zone h3 {
+            color: #334155;
+            margin-bottom: 8px;
+        }
+
+        .upload-zone p {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        .upload-zone input[type="file"] {
+            display: none;
+        }
+
+        .upload-progress {
+            display: none;
+            margin-top: 16px;
+            padding: 12px;
+            background: #f0f7ff;
+            border-radius: 8px;
+        }
+
+        .upload-progress.active { display: block; }
+
+        .documents-list {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .documents-header {
+            padding: 16px 20px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            color: #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .doc-count {
+            font-size: 0.85rem;
+            color: #64748b;
+            font-weight: normal;
+        }
+
+        .document-item {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .document-item:last-child { border-bottom: none; }
+
+        .document-info h4 {
+            color: #1e293b;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+
+        .document-info p {
+            color: #64748b;
+            font-size: 0.8rem;
+        }
+
+        .document-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-danger {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .btn-danger:hover { background: #fecaca; }
+
+        .empty-state {
+            padding: 40px;
+            text-align: center;
+            color: #64748b;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Footer */
         .footer {
-            padding: 12px 20px;
+            padding: 10px 20px;
             background: #f1f5f9;
             display: flex;
             justify-content: space-between;
@@ -220,36 +411,94 @@
             text-decoration: none;
         }
 
-        .footer a:hover {
-            text-decoration: underline;
+        .footer a:hover { text-decoration: underline; }
+
+        .kb-stats {
+            display: flex;
+            gap: 16px;
         }
+
+        .kb-stat {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .kb-stat strong { color: #334155; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>AI Platform Chat</h1>
-            <div class="status-badge" id="statusBadge">
-                <div class="status-dot" id="statusDot"></div>
-                <span id="statusText">Checking...</span>
+            <h1>AI Knowledge Assistant</h1>
+            <div class="header-right">
+                <div class="status-badge" id="statusBadge">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Checking...</span>
+                </div>
             </div>
         </div>
 
-        <div class="chat-area" id="chatArea">
-            <div class="welcome-message">
-                <h2>Welcome to AI Platform</h2>
-                <p>Start a conversation by typing a message below.</p>
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('chat')">Chat</div>
+            <div class="tab" onclick="switchTab('documents')">Knowledge Base</div>
+        </div>
+
+        <!-- Chat Tab -->
+        <div class="tab-content active" id="chatTab">
+            <div class="chat-area" id="chatArea">
+                <div class="welcome-message">
+                    <h2>Welcome to AI Knowledge Assistant</h2>
+                    <p>Upload documents to the Knowledge Base, then ask questions grounded in your data.</p>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <div class="input-row">
+                    <input type="text" id="messageInput" placeholder="Ask a question..." autocomplete="off">
+                    <button id="sendBtn" onclick="sendMessage()">Send</button>
+                </div>
+                <div class="input-options">
+                    <label>
+                        <input type="checkbox" id="useRag" checked>
+                        Search knowledge base
+                    </label>
+                    <span class="kb-stats">
+                        <span class="kb-stat"><strong id="docCount">0</strong> documents</span>
+                        <span class="kb-stat"><strong id="chunkCount">0</strong> chunks</span>
+                    </span>
+                </div>
             </div>
         </div>
 
-        <div class="input-area">
-            <input 
-                type="text" 
-                id="messageInput" 
-                placeholder="Type your message..."
-                autocomplete="off"
-            >
-            <button id="sendBtn" onclick="sendMessage()">Send</button>
+        <!-- Documents Tab -->
+        <div class="tab-content" id="documentsTab">
+            <div class="documents-area">
+                <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                    <h3>Upload Documents</h3>
+                    <p>Drag & drop files here, or click to browse</p>
+                    <p style="margin-top: 8px; font-size: 0.8rem;">Supported: .txt, .md, .json, .csv, .html</p>
+                    <input type="file" id="fileInput" accept=".txt,.md,.json,.csv,.html" multiple>
+                    <div class="upload-progress" id="uploadProgress">
+                        Uploading and processing...
+                    </div>
+                </div>
+
+                <div class="documents-list">
+                    <div class="documents-header">
+                        <span>Documents</span>
+                        <span class="doc-count" id="totalDocs">0 documents</span>
+                    </div>
+                    <div id="documentsList">
+                        <div class="empty-state">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <p>No documents yet. Upload files to build your knowledge base.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="footer">
@@ -262,22 +511,29 @@
         const chatArea = document.getElementById('chatArea');
         const messageInput = document.getElementById('messageInput');
         const sendBtn = document.getElementById('sendBtn');
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
         let isFirstMessage = true;
 
         messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !sendBtn.disabled) {
-                sendMessage();
-            }
+            if (e.key === 'Enter' && !sendBtn.disabled) sendMessage();
         });
 
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab:nth-child(${tabName === 'chat' ? 1 : 2})`).classList.add('active');
+            document.getElementById(tabName + 'Tab').classList.add('active');
+            if (tabName === 'documents') loadDocuments();
+        }
+
         async function checkHealth() {
-            const statusDot = document.getElementById('statusDot');
-            const statusText = document.getElementById('statusText');
-            
             try {
                 const response = await fetch('/health');
                 const data = await response.json();
-                
+                const statusDot = document.getElementById('statusDot');
+                const statusText = document.getElementById('statusText');
+
                 if (data.status === 'healthy') {
                     statusDot.classList.remove('error');
                     statusText.textContent = 'Connected';
@@ -285,13 +541,24 @@
                     statusDot.classList.add('error');
                     statusText.textContent = 'Degraded';
                 }
+
+                if (data.knowledge_base) {
+                    document.getElementById('docCount').textContent = data.knowledge_base.documents;
+                    document.getElementById('chunkCount').textContent = data.knowledge_base.chunks;
+                }
             } catch (e) {
-                statusDot.classList.add('error');
-                statusText.textContent = 'Error';
+                document.getElementById('statusDot').classList.add('error');
+                document.getElementById('statusText').textContent = 'Error';
             }
         }
 
-        function addMessage(content, isUser, cached = false) {
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function addMessage(content, isUser, cached = false, sources = []) {
             if (isFirstMessage) {
                 chatArea.innerHTML = '';
                 isFirstMessage = false;
@@ -299,15 +566,24 @@
 
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
-            
+
             const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const cachedBadge = cached ? '<span class="cached-badge">cached</span>' : '';
-            
+            let badges = '';
+            if (cached) badges += '<span class="badge cached">cached</span>';
+            if (sources.length > 0) badges += `<span class="badge sources">${sources.length} sources</span>`;
+
+            let sourcesHtml = '';
+            if (sources.length > 0 && !isUser) {
+                const sourceNames = [...new Set(sources.map(s => s.filename))];
+                sourcesHtml = `<div class="sources-list"><strong>Sources:</strong> ${sourceNames.join(', ')}</div>`;
+            }
+
             messageDiv.innerHTML = `
                 <div class="message-bubble">${escapeHtml(content)}</div>
-                <div class="message-meta">${time}${cachedBadge}</div>
+                <div class="message-meta">${time} ${badges}</div>
+                ${sourcesHtml}
             `;
-            
+
             chatArea.appendChild(messageDiv);
             chatArea.scrollTop = chatArea.scrollHeight;
         }
@@ -316,11 +592,7 @@
             const indicator = document.createElement('div');
             indicator.className = 'message assistant';
             indicator.id = 'typingIndicator';
-            indicator.innerHTML = `
-                <div class="typing-indicator">
-                    <span></span><span></span><span></span>
-                </div>
-            `;
+            indicator.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
             chatArea.appendChild(indicator);
             chatArea.scrollTop = chatArea.scrollHeight;
         }
@@ -328,12 +600,6 @@
         function removeTypingIndicator() {
             const indicator = document.getElementById('typingIndicator');
             if (indicator) indicator.remove();
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
         }
 
         async function sendMessage() {
@@ -345,11 +611,13 @@
             sendBtn.disabled = true;
             addTypingIndicator();
 
+            const useRag = document.getElementById('useRag').checked;
+
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message })
+                    body: JSON.stringify({ message, use_rag: useRag })
                 });
 
                 const data = await response.json();
@@ -358,7 +626,7 @@
                 if (data.error) {
                     addMessage(`Error: ${data.error}`, false);
                 } else {
-                    addMessage(data.response, false, data.cached);
+                    addMessage(data.response, false, data.cached, data.sources || []);
                 }
             } catch (e) {
                 removeTypingIndicator();
@@ -366,6 +634,108 @@
             } finally {
                 sendBtn.disabled = false;
                 messageInput.focus();
+            }
+        }
+
+        // Document upload handling
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        async function handleFiles(files) {
+            const progress = document.getElementById('uploadProgress');
+            progress.classList.add('active');
+
+            for (const file of files) {
+                progress.textContent = `Processing ${file.name}...`;
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch('/api/documents', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+                    if (data.error) {
+                        alert(`Error uploading ${file.name}: ${data.error}`);
+                    }
+                } catch (e) {
+                    alert(`Failed to upload ${file.name}: ${e.message}`);
+                }
+            }
+
+            progress.classList.remove('active');
+            fileInput.value = '';
+            loadDocuments();
+            checkHealth();
+        }
+
+        async function loadDocuments() {
+            try {
+                const response = await fetch('/api/documents');
+                const data = await response.json();
+                const list = document.getElementById('documentsList');
+                const total = document.getElementById('totalDocs');
+
+                if (data.documents && data.documents.length > 0) {
+                    total.textContent = `${data.documents.length} document${data.documents.length !== 1 ? 's' : ''}`;
+                    list.innerHTML = data.documents.map(doc => `
+                        <div class="document-item">
+                            <div class="document-info">
+                                <h4>${escapeHtml(doc.filename)}</h4>
+                                <p>${doc.chunk_count} chunks · ${doc.file_type || 'txt'} · ${new Date(doc.created_at).toLocaleDateString()}</p>
+                            </div>
+                            <div class="document-actions">
+                                <button class="btn-small btn-danger" onclick="deleteDocument(${doc.id}, '${escapeHtml(doc.filename)}')">Delete</button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    total.textContent = '0 documents';
+                    list.innerHTML = `
+                        <div class="empty-state">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <p>No documents yet. Upload files to build your knowledge base.</p>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.error('Failed to load documents:', e);
+            }
+        }
+
+        async function deleteDocument(id, filename) {
+            if (!confirm(`Delete "${filename}"? This cannot be undone.`)) return;
+
+            try {
+                const response = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+                const data = await response.json();
+                if (data.error) {
+                    alert(`Error: ${data.error}`);
+                } else {
+                    loadDocuments();
+                    checkHealth();
+                }
+            } catch (e) {
+                alert(`Failed to delete: ${e.message}`);
             }
         }
 

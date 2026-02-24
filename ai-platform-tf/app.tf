@@ -1,3 +1,11 @@
+locals {
+  bucket_name = var.spaces_bucket_name != "" ? var.spaces_bucket_name : "${var.stack_name}-bucket-${random_id.bucket_suffix.hex}"
+}
+
+resource "random_id" "bucket_suffix" {
+  byte_length = 4
+}
+
 resource "digitalocean_app" "ai_app" {
   spec {
     name   = "${var.stack_name}-app"
@@ -15,6 +23,7 @@ resource "digitalocean_app" "ai_app" {
         deploy_on_push = true
       }
 
+      # Inference Configuration
       env {
         key   = "GENAI_ENDPOINT"
         value = var.genai_endpoint
@@ -31,6 +40,50 @@ resource "digitalocean_app" "ai_app" {
         value = var.default_model
       }
 
+      # Embedding Configuration
+      env {
+        key   = "EMBEDDING_ENDPOINT"
+        value = var.embedding_endpoint != "" ? var.embedding_endpoint : var.genai_endpoint
+      }
+
+      env {
+        key   = "EMBEDDING_API_KEY"
+        value = var.embedding_api_key != "" ? var.embedding_api_key : var.genai_api_key
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "EMBEDDING_MODEL"
+        value = var.embedding_model
+      }
+
+      env {
+        key   = "EMBEDDING_DIMENSIONS"
+        value = tostring(var.embedding_dimensions)
+      }
+
+      # RAG Configuration
+      env {
+        key   = "CHUNK_SIZE"
+        value = tostring(var.chunk_size)
+      }
+
+      env {
+        key   = "CHUNK_OVERLAP"
+        value = tostring(var.chunk_overlap)
+      }
+
+      env {
+        key   = "RAG_TOP_K"
+        value = tostring(var.rag_top_k)
+      }
+
+      env {
+        key   = "CACHE_TTL_SECONDS"
+        value = tostring(var.cache_ttl_seconds)
+      }
+
+      # PostgreSQL Configuration
       env {
         key   = "PG_HOST"
         value = digitalocean_database_cluster.pg.host
@@ -57,6 +110,7 @@ resource "digitalocean_app" "ai_app" {
         type  = "SECRET"
       }
 
+      # Valkey Configuration
       env {
         key   = "VALKEY_HOST"
         value = digitalocean_database_cluster.valkey.host
@@ -73,6 +127,7 @@ resource "digitalocean_app" "ai_app" {
         type  = "SECRET"
       }
 
+      # Spaces Configuration
       env {
         key   = "SPACES_BUCKET"
         value = digitalocean_spaces_bucket.bucket.name

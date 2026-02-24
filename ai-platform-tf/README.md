@@ -1,55 +1,93 @@
-# DigitalOcean AI Platform Blueprint (Terraform Stack)
+# DigitalOcean AI Platform - Terraform Stack
 
-This blueprint provisions a production-ready starter stack for AI applications on DigitalOcean:
+This Terraform configuration provisions a complete AI application stack on DigitalOcean with RAG (Retrieval-Augmented Generation) capabilities.
 
-- **App Platform application** - Chat/API service with RAG, routing, guardrails, and MCP hooks
-- **Managed PostgreSQL** - Knowledge base (pgvector-ready)
-- **Managed Valkey** - Cache layer
-- **Spaces bucket** - Document and log storage
+## What Gets Provisioned
 
-## How to use this blueprint?
+| Resource | Description |
+|----------|-------------|
+| **App Platform** | Flask app with RAG pipeline, auto-deploy from GitHub |
+| **PostgreSQL 16** | Knowledge base with pgvector for vector search |
+| **Valkey 8** | High-performance cache for responses |
+| **Spaces Bucket** | S3-compatible storage for documents |
 
-Learn [here](../../README.md#how-to-use-digitalocean-blueprints) how to use this blueprint.
+## Quick Start
 
-## Getting started with AI Platform
+```bash
+# 1. Copy and edit the example config
+cp terraform.tfvars.example terraform.tfvars
 
-After the stack is deployed, you can access the application at the `app_live_url` output URL.
+# 2. Initialize Terraform
+terraform init
 
-### Post-deployment steps
+# 3. Preview changes
+terraform plan
 
-1. **Enable pgvector extension** - Run the following SQL in your `kb` database:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ```
-   Your app can also do this automatically on first boot if it runs migrations.
+# 4. Deploy
+terraform apply
+```
 
-2. **Upload documents** - Use the app interface to upload documents that will be stored in Spaces and embedded into the knowledge base.
+## Required Variables
 
-3. **Start querying** - Ask questions that will be grounded in your document corpus.
+| Variable | Description |
+|----------|-------------|
+| `do_token` | DigitalOcean API token |
+| `spaces_access_id` | Spaces access key |
+| `spaces_secret_key` | Spaces secret key |
+| `genai_endpoint` | GenAI or OpenAI-compatible endpoint |
+| `genai_api_key` | API key for inference |
 
-## Stack details
+## RAG Configuration
 
-- **PostgreSQL 16** - Knowledge base with pgvector support for vector similarity search
-- **Valkey 8** - High-performance cache for session and query caching
-- **App Platform** - Fully managed container hosting with auto-deploy from GitHub
-- **Spaces** - S3-compatible object storage for documents and logs
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `chunk_size` | 512 | Words per document chunk |
+| `chunk_overlap` | 64 | Overlap between chunks |
+| `rag_top_k` | 5 | Chunks to retrieve for context |
+| `embedding_model` | bge-large-en-v1.5 | Model for embeddings |
+| `embedding_dimensions` | 1024 | Vector dimensions |
+| `cache_ttl_seconds` | 3600 | Response cache TTL |
 
-## Inference configuration
+## Sizing Options
 
-This blueprint configures the app with endpoint/model variables. The app calls DigitalOcean Serverless Inference externally. Configure these variables to customize model selection:
+```hcl
+# Small (development) - ~$85/month
+pg_size_slug      = "db-s-2vcpu-4gb"
+valkey_size_slug  = "db-s-1vcpu-1gb"
+app_instance_size = "basic-xxs"
 
-- `default_model` - Primary model for inference (default: `llama-3.1-70b-instruct`)
-- `fallback_model` - Fallback model (default: `llama-3.1-8b-instruct`)
-- `embedding_model` - Model for embeddings (default: `bge-large-en-v1.5`)
+# Medium (production) - ~$200/month
+pg_size_slug      = "db-s-4vcpu-8gb"
+valkey_size_slug  = "db-s-2vcpu-4gb"
+app_instance_size = "basic-xs"
 
-## Optional features
+# Large (high traffic) - ~$500/month
+pg_size_slug      = "db-s-8vcpu-16gb"
+valkey_size_slug  = "db-s-4vcpu-8gb"
+app_instance_size = "professional-xs"
+```
 
-- **Uptime monitoring** - Set `enable_uptime_alert = true` and provide `alert_email` to receive downtime notifications.
-- **Project attachment** - Provide `project_uuid` to attach all resources to an existing DigitalOcean project.
+## Outputs
 
-## Security
+After `terraform apply`, you'll see:
 
-- All database passwords are stored as App Platform secrets (type = "SECRET")
-- Spaces credentials are stored as secrets
-- Use private networking where available
-- Enforce TLS end-to-end
+- `app_live_url` - Your deployed application URL
+- `postgres_host` - Database connection host
+- `valkey_host` - Cache connection host
+- `spaces_bucket_name` - Document storage bucket
+- `quick_start` - Next steps instructions
+
+## Features
+
+- **Auto-pgvector**: The app automatically creates the pgvector extension and required tables on first boot
+- **Auto-bucket naming**: If `spaces_bucket_name` is empty, a unique name is generated
+- **Secrets management**: All passwords and API keys are stored as App Platform secrets
+- **Health monitoring**: Optional uptime alerts via `enable_uptime_alert`
+
+## Cleanup
+
+```bash
+terraform destroy
+```
+
+This will remove all provisioned resources.

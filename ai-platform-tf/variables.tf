@@ -1,9 +1,11 @@
+// =============================================================================
 // API CONFIGURATION
+// =============================================================================
 
 variable "do_token" {
   description = "DigitalOcean API token (write scope)."
   type        = string
-  default     = "dop_v1_your_token"
+  sensitive   = true
 }
 
 variable "_api_host" {
@@ -12,7 +14,9 @@ variable "_api_host" {
   default     = "https://api.digitalocean.com"
 }
 
+// =============================================================================
 // PROJECT CONFIGURATION
+// =============================================================================
 
 variable "project_uuid" {
   description = "Optional: DigitalOcean Project UUID to attach created resources."
@@ -38,7 +42,9 @@ variable "region" {
   default     = "nyc3"
 }
 
+// =============================================================================
 // STACK NAMING
+// =============================================================================
 
 variable "stack_name" {
   description = "Base name for all resources."
@@ -46,25 +52,26 @@ variable "stack_name" {
   default     = "ai-platform"
 }
 
+// =============================================================================
 // SPACES CONFIGURATION
+// =============================================================================
 
 variable "spaces_access_id" {
   description = "Spaces access key."
   type        = string
-  default     = "your_spaces_access_key_here"
+  sensitive   = true
 }
 
 variable "spaces_secret_key" {
   description = "Spaces secret key."
   type        = string
-  default     = "your_spaces_secret_key_here"
   sensitive   = true
 }
 
 variable "spaces_bucket_name" {
-  description = "Spaces bucket name."
+  description = "Spaces bucket name (must be globally unique)."
   type        = string
-  default     = "ai-platform-bucket-1"
+  default     = ""
 }
 
 variable "spaces_region" {
@@ -73,7 +80,9 @@ variable "spaces_region" {
   default     = "nyc3"
 }
 
+// =============================================================================
 // KNOWLEDGE BASE (MANAGED POSTGRES)
+// =============================================================================
 
 variable "pg_node_count" {
   description = "Number of nodes in the PostgreSQL cluster."
@@ -105,7 +114,9 @@ variable "_pg_engine_version" {
   default     = "16"
 }
 
+// =============================================================================
 // CACHE (MANAGED VALKEY)
+// =============================================================================
 
 variable "valkey_node_count" {
   description = "Number of nodes in the Valkey cluster."
@@ -137,7 +148,9 @@ variable "_valkey_engine_version" {
   default     = "8"
 }
 
+// =============================================================================
 // APP PLATFORM CONFIGURATION
+// =============================================================================
 
 variable "app_source_repo" {
   description = "GitHub repo for the AI starter kit (e.g., digitalocean/ai-starter-kit)."
@@ -169,28 +182,89 @@ variable "app_http_port" {
   default     = 8080
 }
 
-// GENAI CONFIGURATION (DigitalOcean GenAI Agent)
+// =============================================================================
+// GENAI / INFERENCE CONFIGURATION
+// =============================================================================
 
 variable "genai_endpoint" {
-  description = "DigitalOcean GenAI Agent endpoint URL (from GenAI console)."
+  description = "DigitalOcean GenAI Agent endpoint URL or any OpenAI-compatible endpoint."
   type        = string
   default     = ""
 }
 
 variable "genai_api_key" {
-  description = "DigitalOcean GenAI Agent API key (from GenAI console)."
+  description = "API key for the GenAI/inference endpoint."
   type        = string
   default     = ""
   sensitive   = true
 }
 
 variable "default_model" {
-  description = "Default model identifier used by your app/router."
+  description = "Default model identifier for chat/completion."
   type        = string
   default     = "llama-3.1-70b-instruct"
 }
 
+// =============================================================================
+// EMBEDDING CONFIGURATION
+// =============================================================================
+
+variable "embedding_endpoint" {
+  description = "Endpoint for generating embeddings. Defaults to GENAI_ENDPOINT if not set."
+  type        = string
+  default     = ""
+}
+
+variable "embedding_api_key" {
+  description = "API key for the embedding endpoint. Defaults to GENAI_API_KEY if not set."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "embedding_model" {
+  description = "Model identifier for embeddings."
+  type        = string
+  default     = "bge-large-en-v1.5"
+}
+
+variable "embedding_dimensions" {
+  description = "Dimension size of embedding vectors (must match model output)."
+  type        = number
+  default     = 1024
+}
+
+// =============================================================================
+// RAG CONFIGURATION
+// =============================================================================
+
+variable "chunk_size" {
+  description = "Number of words per document chunk."
+  type        = number
+  default     = 512
+}
+
+variable "chunk_overlap" {
+  description = "Number of overlapping words between chunks."
+  type        = number
+  default     = 64
+}
+
+variable "rag_top_k" {
+  description = "Number of chunks to retrieve for RAG context."
+  type        = number
+  default     = 5
+}
+
+variable "cache_ttl_seconds" {
+  description = "Time-to-live for cached responses in seconds."
+  type        = number
+  default     = 3600
+}
+
+// =============================================================================
 // OBSERVABILITY / ALERTING
+// =============================================================================
 
 variable "enable_uptime_alert" {
   description = "Create an uptime check + alert for the app URL."
