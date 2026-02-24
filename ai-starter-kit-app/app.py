@@ -127,6 +127,7 @@ def get_embedding(text):
     model = os.environ.get("EMBEDDING_MODEL", "bge-large-en-v1.5")
     
     if not endpoint or not api_key:
+        app.logger.warning("Embedding not configured: missing endpoint or API key")
         return None
     
     headers = {
@@ -135,11 +136,13 @@ def get_embedding(text):
     }
     
     base_url = endpoint.rstrip('/')
-    paths_to_try = ["/api/v1/embeddings", "/v1/embeddings", "/embeddings", ""]
+    paths_to_try = ["/v1/embeddings", "/api/v1/embeddings", "/embeddings", ""]
+    last_error = None
     
     for path in paths_to_try:
         try:
             url = f"{base_url}{path}"
+            app.logger.info(f"Trying embedding endpoint: {url}")
             response = requests.post(
                 url,
                 headers=headers,
@@ -148,17 +151,30 @@ def get_embedding(text):
             )
             
             if response.status_code == 404:
+                last_error = f"404 at {url}"
+                continue
+            
+            if response.status_code != 200:
+                last_error = f"{response.status_code}: {response.text[:200]}"
+                app.logger.error(f"Embedding API error at {url}: {last_error}")
                 continue
                 
-            if response.status_code == 200:
-                data = response.json()
-                if "data" in data and len(data["data"]) > 0:
-                    return data["data"][0].get("embedding")
-                elif "embedding" in data:
-                    return data["embedding"]
-        except Exception:
+            data = response.json()
+            if "data" in data and len(data["data"]) > 0:
+                app.logger.info(f"Embedding successful via {url}")
+                return data["data"][0].get("embedding")
+            elif "embedding" in data:
+                app.logger.info(f"Embedding successful via {url}")
+                return data["embedding"]
+            else:
+                last_error = f"Unexpected response format: {str(data)[:100]}"
+                app.logger.error(f"Embedding response format error: {last_error}")
+        except Exception as e:
+            last_error = str(e)
+            app.logger.error(f"Embedding exception at {url}: {e}")
             continue
     
+    app.logger.error(f"All embedding endpoints failed. Last error: {last_error}")
     return None
 
 # =============================================================================
@@ -359,13 +375,48 @@ def health():
         doc_count = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM chunks")
         chunk_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM chunks WHERE embedding IS NOT NULL")
+        embedded_count = cur.fetchone()[0]
         cur.close()
         conn.close()
-        status["knowledge_base"] = {"documents": doc_count, "chunks": chunk_count}
+        status["knowledge_base"] = {
+            "documents": doc_count, 
+            "chunks": chunk_count,
+            "chunks_with_embeddings": embedded_count,
+            "rag_ready": embedded_count > 0
+        }
     except Exception:
-        status["knowledge_base"] = {"documents": 0, "chunks": 0}
+        status["knowledge_base"] = {"documents": 0, "chunks": 0, "chunks_with_embeddings": 0, "rag_ready": False}
     
     return jsonify(status)
+
+
+@app.route("/api/test-embedding", methods=["POST"])
+def test_embedding():
+    """Test if the embedding endpoint is working."""
+    data = request.get_json() or {}
+    test_text = data.get("text", "This is a test sentence for embedding.")
+    
+    endpoint = os.environ.get("EMBEDDING_ENDPOINT") or os.environ.get("GENAI_ENDPOINT", "")
+    model = os.environ.get("EMBEDDING_MODEL", "bge-large-en-v1.5")
+    
+    result = {
+        "endpoint": endpoint[:50] + "..." if len(endpoint) > 50 else endpoint,
+        "model": model,
+        "test_text": test_text[:50] + "..." if len(test_text) > 50 else test_text,
+    }
+    
+    embedding = get_embedding(test_text)
+    
+    if embedding:
+        result["status"] = "success"
+        result["embedding_dimensions"] = len(embedding)
+        result["sample"] = embedding[:5]
+    else:
+        result["status"] = "failed"
+        result["error"] = "Could not generate embedding. Check logs for details."
+    
+    return jsonify(result)
 
 # =============================================================================
 # ROUTES: RAG CHAT
