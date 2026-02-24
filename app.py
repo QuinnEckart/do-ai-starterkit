@@ -43,25 +43,34 @@ def get_spaces_client():
     )
 
 def get_inference_client():
-    """Get OpenAI-compatible client for DigitalOcean GenAI."""
-    base_url = os.environ.get("GENAI_ENDPOINT", "")
-    api_key = os.environ.get("GENAI_API_KEY", "")
+    """
+    Get OpenAI-compatible client for inference.
+    Supports:
+    1. Custom endpoint (GENAI_ENDPOINT + GENAI_API_KEY) - for GenAI agents or other providers
+    2. DigitalOcean Serverless Inference (DO_API_TOKEN) - direct model access
+    """
+    custom_endpoint = os.environ.get("GENAI_ENDPOINT", "")
+    custom_key = os.environ.get("GENAI_API_KEY", "")
     
-    if not base_url or not api_key:
-        return None
+    if custom_endpoint and custom_key:
+        return OpenAI(base_url=custom_endpoint, api_key=custom_key)
     
-    return OpenAI(
-        base_url=base_url,
-        api_key=api_key
-    )
+    do_token = os.environ.get("DO_API_TOKEN", "")
+    if do_token:
+        return OpenAI(
+            base_url="https://cloud.digitalocean.com/v1/inference",
+            api_key=do_token
+        )
+    
+    return None
 
 def call_inference(messages):
-    """Call DigitalOcean GenAI serverless inference."""
+    """Call inference endpoint."""
     client = get_inference_client()
-    model = os.environ.get("DEFAULT_MODEL", "llama-3.1-70b-instruct")
+    model = os.environ.get("DEFAULT_MODEL", "llama3.1-70b-instruct")
     
     if not client:
-        return "AI inference not configured. Set GENAI_ENDPOINT and GENAI_API_KEY environment variables."
+        return "AI inference not configured. Set DO_API_TOKEN or GENAI_ENDPOINT + GENAI_API_KEY."
     
     try:
         response = client.chat.completions.create(
@@ -72,7 +81,10 @@ def call_inference(messages):
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Inference error: {str(e)}"
+        error_msg = str(e)
+        if "404" in error_msg or "not found" in error_msg.lower():
+            return f"Model '{model}' not available. Check your model name or try: meta-llama/Meta-Llama-3.1-70B-Instruct"
+        return f"Inference error: {error_msg}"
 
 def get_cache_key(message):
     """Generate cache key from message."""
@@ -116,12 +128,10 @@ def health():
         status["components"]["spaces"] = f"error: {str(e)}"
         status["status"] = "degraded"
     
-    genai_endpoint = os.environ.get("GENAI_ENDPOINT", "")
-    genai_key = os.environ.get("GENAI_API_KEY", "")
-    if genai_endpoint and genai_key:
-        status["components"]["genai"] = "configured"
+    if get_inference_client():
+        status["components"]["inference"] = "configured"
     else:
-        status["components"]["genai"] = "not configured"
+        status["components"]["inference"] = "not configured"
         status["status"] = "degraded"
     
     return jsonify(status)
@@ -151,7 +161,7 @@ def chat():
     messages = [
         {
             "role": "system",
-            "content": "You are a helpful AI assistant powered by DigitalOcean GenAI. Be concise and helpful."
+            "content": "You are a helpful AI assistant. Be concise and helpful."
         },
         {
             "role": "user",
