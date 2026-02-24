@@ -49,7 +49,7 @@ def call_inference(messages):
     """
     custom_endpoint = os.environ.get("GENAI_ENDPOINT", "")
     custom_key = os.environ.get("GENAI_API_KEY", "")
-    model = os.environ.get("DEFAULT_MODEL", "llama3.1-70b-instruct")
+    model = os.environ.get("DEFAULT_MODEL", "")
     
     if custom_endpoint and custom_key:
         headers = {
@@ -58,11 +58,13 @@ def call_inference(messages):
         }
         
         payload = {
-            "model": model,
             "messages": messages,
             "max_tokens": 1024,
             "temperature": 0.7
         }
+        
+        if model:
+            payload["model"] = model
         
         try:
             response = requests.post(
