@@ -1,0 +1,16 @@
+# Terraform state files (contain secrets)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform variables file (contains credentials)
+terraform.tfvars
+*.tfvars
+
+# Terraform cache
+.terraform/
+.terraform.lock.hcl
+
+# IDE
+.vscode/
+.idea/
