@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS documents (
     filename TEXT NOT NULL,
     content TEXT,
     file_type TEXT,
-    metadata JSONB DEFAULT '{}',
+    metadata JSONB DEFAULT '{{}}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
