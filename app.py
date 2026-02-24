@@ -6,7 +6,7 @@ from psycopg2.extras import RealDictCursor
 import redis
 import boto3
 from botocore.client import Config
-from openai import OpenAI
+import requests
 
 app = Flask(__name__)
 
@@ -42,53 +42,65 @@ def get_spaces_client():
         config=Config(signature_version="s3v4")
     )
 
-def get_inference_client():
+def call_inference(messages):
     """
-    Get OpenAI-compatible client for inference.
-    Supports:
-    1. Custom endpoint (GENAI_ENDPOINT + GENAI_API_KEY) - for GenAI agents or other providers
-    2. DigitalOcean Serverless Inference (DO_API_TOKEN) - direct model access
+    Call inference endpoint.
+    Supports custom GenAI endpoint or falls back to echo mode for demo.
     """
     custom_endpoint = os.environ.get("GENAI_ENDPOINT", "")
     custom_key = os.environ.get("GENAI_API_KEY", "")
-    
-    if custom_endpoint and custom_key:
-        return OpenAI(base_url=custom_endpoint, api_key=custom_key)
-    
-    do_token = os.environ.get("DO_API_TOKEN", "")
-    if do_token:
-        return OpenAI(
-            base_url="https://cloud.digitalocean.com/v1/inference",
-            api_key=do_token
-        )
-    
-    return None
-
-def call_inference(messages):
-    """Call inference endpoint."""
-    client = get_inference_client()
     model = os.environ.get("DEFAULT_MODEL", "llama3.1-70b-instruct")
     
-    if not client:
-        return "AI inference not configured. Set DO_API_TOKEN or GENAI_ENDPOINT + GENAI_API_KEY."
+    if custom_endpoint and custom_key:
+        headers = {
+            "Authorization": f"Bearer {custom_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": 1024,
+            "temperature": 0.7
+        }
+        
+        try:
+            response = requests.post(
+                f"{custom_endpoint.rstrip('/')}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            
+            if response.status_code != 200:
+                return f"API error ({response.status_code}): {response.text[:200]}"
+            
+            data = response.json()
+            
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0].get("message", {}).get("content", "No content in response")
+            elif "error" in data:
+                return f"API error: {data['error']}"
+            else:
+                return f"Unexpected response format: {str(data)[:200]}"
+                
+        except requests.exceptions.Timeout:
+            return "Request timed out. The model may be loading - please try again."
+        except requests.exceptions.RequestException as e:
+            return f"Request failed: {str(e)}"
+        except Exception as e:
+            return f"Inference error: {str(e)}"
     
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            max_tokens=1024,
-            temperature=0.7
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        error_msg = str(e)
-        if "404" in error_msg or "not found" in error_msg.lower():
-            return f"Model '{model}' not available. Check your model name or try: meta-llama/Meta-Llama-3.1-70B-Instruct"
-        return f"Inference error: {error_msg}"
+    user_message = messages[-1].get("content", "") if messages else ""
+    return f"[Demo Mode - No GenAI configured] You said: {user_message}\n\nTo enable AI responses, configure GENAI_ENDPOINT and GENAI_API_KEY in your App Platform environment variables."
 
 def get_cache_key(message):
     """Generate cache key from message."""
     return f"chat:{hashlib.md5(message.encode()).hexdigest()}"
+
+def is_inference_configured():
+    """Check if inference is configured."""
+    return bool(os.environ.get("GENAI_ENDPOINT") and os.environ.get("GENAI_API_KEY"))
 
 @app.route("/")
 def index():
@@ -128,11 +140,10 @@ def health():
         status["components"]["spaces"] = f"error: {str(e)}"
         status["status"] = "degraded"
     
-    if get_inference_client():
+    if is_inference_configured():
         status["components"]["inference"] = "configured"
     else:
-        status["components"]["inference"] = "not configured"
-        status["status"] = "degraded"
+        status["components"]["inference"] = "demo mode (no GenAI endpoint)"
     
     return jsonify(status)
 
