@@ -113,9 +113,14 @@ def retrieve_from_kb(query, top_k=RAG_TOP_K):
         
         formatted = []
         for r in results:
+            # DO KB returns text_content and metadata.item_name
+            content = r.get("text_content", r.get("content", r.get("text", "")))
+            metadata = r.get("metadata", {})
+            source = metadata.get("item_name", metadata.get("source", "unknown"))
+            
             formatted.append({
-                "content": r.get("content", r.get("text", "")),
-                "source": r.get("source", r.get("metadata", {}).get("source", "unknown")),
+                "content": content,
+                "source": source,
                 "score": r.get("score", 0)
             })
         
@@ -316,13 +321,14 @@ Context from knowledge base:
 
 @app.route("/api/test-kb", methods=["POST"])
 def test_kb():
-    """Test the Knowledge Base connection."""
+    """Test the Knowledge Base connection with detailed error reporting."""
     kb_uuid = get_kb_uuid()
     token = get_do_token()
     
     result = {
-        "kb_uuid": kb_uuid[:12] + "..." if kb_uuid else "not set",
-        "token_configured": bool(token)
+        "kb_uuid": kb_uuid if kb_uuid else "not set",
+        "token_configured": bool(token),
+        "token_preview": token[:20] + "..." if token else "not set"
     }
     
     if not kb_uuid or not token:
@@ -330,16 +336,45 @@ def test_kb():
         result["message"] = "Set KB_UUID and DO_API_TOKEN environment variables"
         return jsonify(result)
     
-    # Test retrieve
-    contexts = retrieve_from_kb("test query")
+    # Test retrieve with detailed error capture
+    url = f"{KBAAS_BASE_URL}/{kb_uuid}/retrieve"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "query": "test",
+        "num_results": 3,
+        "alpha": 0.5
+    }
     
-    if contexts:
-        result["status"] = "success"
-        result["message"] = f"Retrieved {len(contexts)} results"
-        result["sample"] = contexts[0].get("content", "")[:100] + "..."
-    else:
-        result["status"] = "no_results"
-        result["message"] = "Connected but no results. KB may be empty or query didn't match."
+    result["url"] = url
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        result["status_code"] = response.status_code
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = data.get("results", [])
+            if results:
+                result["status"] = "success"
+                result["message"] = f"Retrieved {len(results)} results"
+                # DO KB uses text_content
+                sample = results[0].get("text_content", results[0].get("content", ""))
+                result["sample"] = sample[:150] if sample else "No content"
+                result["source"] = results[0].get("metadata", {}).get("item_name", "unknown")
+            else:
+                result["status"] = "empty"
+                result["message"] = "Connected successfully but KB returned no results"
+                result["raw_response"] = str(data)[:300]
+        else:
+            result["status"] = "error"
+            result["message"] = f"API returned {response.status_code}"
+            result["error_body"] = response.text[:500]
+    except Exception as e:
+        result["status"] = "exception"
+        result["message"] = str(e)
     
     return jsonify(result)
 
