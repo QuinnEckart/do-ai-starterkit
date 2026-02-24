@@ -25,15 +25,15 @@ resource "digitalocean_app" "ai_app" {
 
       source_dir = "/ai-starter-kit-app"
 
-      # Inference Configuration
+      # GenAI Agent (auto-created)
       env {
         key   = "GENAI_ENDPOINT"
-        value = var.genai_endpoint
+        value = digitalocean_genai_agent.agent.url
       }
 
       env {
         key   = "GENAI_API_KEY"
-        value = var.genai_api_key
+        value = length(digitalocean_genai_agent.agent.api_keys) > 0 ? digitalocean_genai_agent.agent.api_keys[0].key : ""
         type  = "SECRET"
       }
 
@@ -42,10 +42,10 @@ resource "digitalocean_app" "ai_app" {
         value = var.default_model
       }
 
-      # DigitalOcean Knowledge Base
+      # Knowledge Base (auto-created)
       env {
         key   = "KB_UUID"
-        value = var.kb_uuid
+        value = digitalocean_genai_knowledge_base.kb.id
       }
 
       env {

@@ -21,20 +21,17 @@ spaces_access_id  = "your_spaces_access_key"
 spaces_secret_key = "your_spaces_secret_key"
 
 # =============================================================================
-# REQUIRED - GenAI Configuration
+# OPTIONAL - GenAI Agent Configuration
 # =============================================================================
 
-# DigitalOcean GenAI Agent endpoint (create at: https://cloud.digitalocean.com/gen-ai/agents)
-genai_endpoint = "https://your-agent.agents.do-ai.run"
-genai_api_key  = "your_agent_api_key"
+# Custom instruction for your AI agent
+# agent_instruction = "You are a helpful AI assistant..."
 
-# =============================================================================
-# REQUIRED - DigitalOcean Knowledge Base
-# =============================================================================
+# Model temperature (0.0 = deterministic, 1.0 = creative)
+# agent_temperature = 0.7
 
-# Create a Knowledge Base at: https://cloud.digitalocean.com/gen-ai/knowledge-bases
-# Copy the UUID from the KB details page
-kb_uuid = "your-kb-uuid-here"
+# Maximum response tokens
+# agent_max_tokens = 1024
 
 # =============================================================================
 # OPTIONAL - Customize Your Deployment
@@ -46,11 +43,8 @@ kb_uuid = "your-kb-uuid-here"
 # Region for deployment
 # region = "nyc3"
 
-# Model configuration for chat
-# default_model = "llama-3.1-70b-instruct"
-
-# RAG tuning
-# rag_top_k = 5  # Number of results to retrieve from KB
+# RAG settings
+# rag_top_k = 5  # Number of KB results to retrieve
 
 # Database sizing (adjust based on your workload)
 # pg_size_slug     = "db-s-2vcpu-4gb"   # PostgreSQL size

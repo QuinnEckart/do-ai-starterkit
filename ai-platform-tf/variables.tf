@@ -183,21 +183,8 @@ variable "app_http_port" {
 
 
 // =============================================================================
-// GENAI / INFERENCE CONFIGURATION
+// GENAI MODEL CONFIGURATION
 // =============================================================================
-
-variable "genai_endpoint" {
-  description = "DigitalOcean GenAI Agent endpoint URL or any OpenAI-compatible endpoint."
-  type        = string
-  default     = ""
-}
-
-variable "genai_api_key" {
-  description = "API key for the GenAI/inference endpoint."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
 
 variable "default_model" {
   description = "Default model identifier for chat/completion."
@@ -206,13 +193,41 @@ variable "default_model" {
 }
 
 // =============================================================================
-// DIGITALOCEAN KNOWLEDGE BASE
+// GENAI AGENT CONFIGURATION
 // =============================================================================
 
-variable "kb_uuid" {
-  description = "DigitalOcean Knowledge Base UUID. Create one at: https://cloud.digitalocean.com/gen-ai/knowledge-bases"
+variable "agent_model_uuid" {
+  description = "UUID of the LLM model for the agent. Default is Llama 3.1 70B."
   type        = string
-  default     = ""
+  default     = "d754f2d7-d1f0-11ef-bf8f-4e013e2ddde4"  # llama-3.1-70b-instruct
+}
+
+variable "agent_instruction" {
+  description = "System instruction for the AI agent."
+  type        = string
+  default     = "You are a helpful AI assistant. Answer questions based on the knowledge base when available. Be concise and accurate."
+}
+
+variable "agent_temperature" {
+  description = "Temperature setting for the agent (0.0-1.0)."
+  type        = number
+  default     = 0.7
+}
+
+variable "agent_max_tokens" {
+  description = "Maximum tokens for agent responses."
+  type        = number
+  default     = 1024
+}
+
+// =============================================================================
+// GENAI KNOWLEDGE BASE CONFIGURATION
+// =============================================================================
+
+variable "kb_embedding_model_uuid" {
+  description = "UUID of the embedding model. Default is GTE Large EN v1.5."
+  type        = string
+  default     = "22653204-79ed-11ef-bf8f-4e013e2ddde4"  # gte-large-en-v1.5
 }
 
 variable "rag_top_k" {
