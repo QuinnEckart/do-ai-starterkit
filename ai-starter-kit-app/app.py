@@ -124,93 +124,6 @@ def retrieve_from_kb(query, top_k=RAG_TOP_K):
         app.logger.error(f"KB retrieve error: {e}")
         return []
 
-def upload_to_kb(filename, content):
-    """Upload a document to the DigitalOcean Knowledge Base."""
-    kb_uuid = get_kb_uuid()
-    token = get_do_token()
-    
-    if not kb_uuid or not token:
-        return {"error": "KB_UUID or DO_API_TOKEN not configured"}
-    
-    # Try the documents endpoint
-    url = f"{KBAAS_BASE_URL}/{kb_uuid}/documents"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "documents": [{
-            "content": content,
-            "metadata": {
-                "source": filename,
-                "filename": filename
-            }
-        }]
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
-        
-        if response.status_code in [200, 201, 202]:
-            return {"status": "ok", "message": f"Uploaded {filename} to Knowledge Base"}
-        else:
-            error_msg = response.text[:300]
-            app.logger.error(f"KB upload error: {response.status_code} - {error_msg}")
-            return {"error": f"Upload failed: {error_msg}", "status_code": response.status_code}
-    except Exception as e:
-        app.logger.error(f"KB upload error: {e}")
-        return {"error": str(e)}
-
-def list_kb_documents():
-    """List documents in the Knowledge Base."""
-    kb_uuid = get_kb_uuid()
-    token = get_do_token()
-    
-    if not kb_uuid or not token:
-        return []
-    
-    url = f"{KBAAS_BASE_URL}/{kb_uuid}/documents"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=30)
-        
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("documents", [])
-        else:
-            app.logger.warning(f"KB list documents: {response.status_code}")
-            return []
-    except Exception as e:
-        app.logger.warning(f"KB list documents error: {e}")
-        return []
-
-def delete_kb_document(doc_id):
-    """Delete a document from the Knowledge Base."""
-    kb_uuid = get_kb_uuid()
-    token = get_do_token()
-    
-    if not kb_uuid or not token:
-        return {"error": "KB_UUID or DO_API_TOKEN not configured"}
-    
-    url = f"{KBAAS_BASE_URL}/{kb_uuid}/documents/{doc_id}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    
-    try:
-        response = requests.delete(url, headers=headers, timeout=30)
-        
-        if response.status_code in [200, 204]:
-            return {"status": "ok"}
-        else:
-            return {"error": f"Delete failed: {response.text[:200]}"}
-    except Exception as e:
-        return {"error": str(e)}
 
 # =============================================================================
 # INFERENCE
@@ -400,44 +313,6 @@ Context from knowledge base:
     
     return jsonify(result)
 
-@app.route("/api/documents", methods=["GET"])
-def list_documents():
-    """List documents in the Knowledge Base."""
-    docs = list_kb_documents()
-    return jsonify({"documents": docs, "source": "DigitalOcean Knowledge Base"})
-
-@app.route("/api/documents", methods=["POST"])
-def upload_document():
-    """Upload a document to the Knowledge Base."""
-    if "file" not in request.files:
-        return jsonify({"error": "No file provided"}), 400
-    
-    file = request.files["file"]
-    if not file.filename:
-        return jsonify({"error": "No filename"}), 400
-    
-    filename = file.filename
-    content = file.read().decode("utf-8", errors="ignore")
-    
-    if not content.strip():
-        return jsonify({"error": "File is empty"}), 400
-    
-    result = upload_to_kb(filename, content)
-    
-    if "error" in result:
-        return jsonify(result), 400
-    
-    return jsonify(result)
-
-@app.route("/api/documents/<doc_id>", methods=["DELETE"])
-def delete_document(doc_id):
-    """Delete a document from the Knowledge Base."""
-    result = delete_kb_document(doc_id)
-    
-    if "error" in result:
-        return jsonify(result), 400
-    
-    return jsonify(result)
 
 @app.route("/api/test-kb", methods=["POST"])
 def test_kb():

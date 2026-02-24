@@ -213,27 +213,10 @@
             border-radius: 4px;
             font-size: 0.85rem;
         }
-        .upload-zone {
-            border: 2px dashed #cbd5e1;
-            border-radius: 12px;
-            padding: 40px;
-            text-align: center;
-            background: white;
-            margin-bottom: 20px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .upload-zone:hover, .upload-zone.dragover { border-color: #0061ff; background: #f0f7ff; }
-        .upload-zone h3 { color: #334155; margin-bottom: 8px; }
-        .upload-zone p { color: #64748b; font-size: 0.9rem; }
-        .upload-zone input[type="file"] { display: none; }
-        .upload-progress { display: none; margin-top: 16px; padding: 12px; background: #dbeafe; border-radius: 8px; color: #1e40af; }
-        .upload-progress.active { display: block; }
-        .upload-progress.error { background: #fee2e2; color: #dc2626; }
         .console-link {
             display: inline-block;
             margin-top: 16px;
-            padding: 10px 20px;
+            padding: 12px 24px;
             background: #0061ff;
             color: white;
             text-decoration: none;
@@ -241,6 +224,15 @@
             font-weight: 500;
         }
         .console-link:hover { background: #0050dd; }
+        .steps-list {
+            margin: 16px 0;
+            padding-left: 20px;
+        }
+        .steps-list li {
+            color: #475569;
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
         .footer {
             padding: 10px 20px;
             background: #f1f5f9;
@@ -305,20 +297,44 @@
                     </div>
                 </div>
 
-                <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-                    <h3>Upload Documents</h3>
-                    <p>Drag & drop files here, or click to browse</p>
-                    <p style="margin-top:8px;font-size:0.8rem">Supported: .txt, .md, .json, .csv, .html</p>
-                    <input type="file" id="fileInput" accept=".txt,.md,.json,.csv,.html" multiple>
-                    <div class="upload-progress" id="uploadProgress">Processing...</div>
+                <div class="kb-info-card">
+                    <h3>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        Add Documents
+                    </h3>
+                    <p>To add documents to your Knowledge Base, use the DigitalOcean GenAI Console:</p>
+                    <ol class="steps-list">
+                        <li>Click the button below to open your Knowledge Base</li>
+                        <li>Click "Add Data Source"</li>
+                        <li>Upload your files (.txt, .pdf, .md, etc.)</li>
+                        <li>Wait for processing to complete</li>
+                        <li>Come back here and start asking questions!</li>
+                    </ol>
+                    <a href="https://cloud.digitalocean.com/gen-ai/knowledge-bases" target="_blank" class="console-link">
+                        Open Knowledge Base Console
+                    </a>
                 </div>
 
                 <div class="kb-info-card">
-                    <h3>Manage via Console</h3>
-                    <p>For advanced management (data sources, settings, bulk uploads), use the DigitalOcean GenAI Console.</p>
-                    <a href="https://cloud.digitalocean.com/gen-ai/knowledge-bases" target="_blank" class="console-link">
-                        Open GenAI Console
-                    </a>
+                    <h3>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                        How It Works
+                    </h3>
+                    <p>When you ask a question with "Search knowledge base" enabled:</p>
+                    <ol class="steps-list">
+                        <li>Your question is sent to the DO Knowledge Base</li>
+                        <li>Relevant documents are found using semantic search</li>
+                        <li>The AI uses those documents to answer your question</li>
+                        <li>Sources are shown below each response</li>
+                    </ol>
                 </div>
             </div>
         </div>
@@ -375,7 +391,9 @@
                 
                 if (data.status === 'success' || data.status === 'no_results') {
                     indicator.classList.remove('disconnected');
-                    message.textContent = data.message;
+                    message.textContent = data.status === 'success' ? 
+                        `Connected! Found ${data.message}` : 
+                        'Connected (KB may be empty or no matches found)';
                 } else {
                     indicator.classList.add('disconnected');
                     message.textContent = data.message || 'Connection failed';
@@ -447,50 +465,6 @@
                 sendBtn.disabled = false;
                 messageInput.focus();
             }
-        }
-
-        const uploadZone = document.getElementById('uploadZone');
-        const fileInput = document.getElementById('fileInput');
-        uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
-        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
-        uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
-        fileInput.addEventListener('change', e => handleFiles(e.target.files));
-
-        async function handleFiles(files) {
-            const progress = document.getElementById('uploadProgress');
-            progress.classList.remove('error');
-            progress.classList.add('active');
-            
-            for (const file of files) {
-                progress.textContent = `Uploading ${file.name}...`;
-                const formData = new FormData();
-                formData.append('file', file);
-                
-                try {
-                    const res = await fetch('/api/documents', {method: 'POST', body: formData});
-                    const data = await res.json();
-                    
-                    if (data.error) {
-                        progress.classList.add('error');
-                        progress.textContent = `Error: ${data.error}`;
-                        if (data.error.includes('404') || data.error.includes('not found')) {
-                            progress.textContent = 'API not available. Please upload via DO Console instead.';
-                        }
-                    } else {
-                        progress.textContent = data.message || 'Upload complete!';
-                    }
-                } catch (e) {
-                    progress.classList.add('error');
-                    progress.textContent = `Failed: ${e.message}`;
-                }
-            }
-            
-            setTimeout(() => {
-                if (!progress.classList.contains('error')) {
-                    progress.classList.remove('active');
-                }
-            }, 3000);
-            fileInput.value = '';
         }
 
         checkHealth();
