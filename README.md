@@ -45,20 +45,27 @@ Run `terraform apply` and in ~5 minutes you have:
 - [Spaces access keys](https://cloud.digitalocean.com/spaces) (for object storage)
 - GenAI endpoint (DigitalOcean GenAI, OpenAI, or any compatible API)
 
-### Deploy in 3 Steps
+### Deploy in 4 Steps
 
 ```bash
-# 1. Clone and configure
-git clone https://github.com/digitalocean/ai-starter-kit.git
-cd ai-starter-kit/ai-platform-tf
+# 1. Fork/clone and push to your GitHub
+# Fork this repo on GitHub, then:
+git clone https://github.com/YOUR_USERNAME/ai-starter-kit.git
+cd ai-starter-kit
+git remote set-url origin https://github.com/YOUR_USERNAME/ai-starter-kit.git
+git push -u origin main
+
+# 2. Configure Terraform
+cd ai-platform-tf
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your credentials
 
-# 2. Deploy
+# 3. Deploy
 terraform init
 terraform apply
+# Terraform will prompt for your GitHub repo (e.g., "your-username/ai-starter-kit")
 
-# 3. Open your app
+# 4. Open your app
 # Terraform outputs the live URL - open it in your browser!
 ```
 

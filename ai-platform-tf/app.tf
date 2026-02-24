@@ -23,6 +23,8 @@ resource "digitalocean_app" "ai_app" {
         deploy_on_push = true
       }
 
+      source_dir = "/ai-starter-kit-app"
+
       # Inference Configuration
       env {
         key   = "GENAI_ENDPOINT"

@@ -153,9 +153,8 @@ variable "_valkey_engine_version" {
 // =============================================================================
 
 variable "app_source_repo" {
-  description = "GitHub repo for the AI starter kit (e.g., digitalocean/ai-starter-kit)."
+  description = "Your GitHub repo (e.g., username/repo-name). The app will auto-deploy from this repo."
   type        = string
-  default     = "digitalocean/ai-starter-kit"
 }
 
 variable "app_source_branch" {

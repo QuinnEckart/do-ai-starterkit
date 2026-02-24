@@ -2,6 +2,14 @@
 # Copy this file to terraform.tfvars and fill in your values
 
 # =============================================================================
+# REQUIRED - GitHub Repository
+# =============================================================================
+
+# Your GitHub repo containing the ai-starter-kit-app code
+# Format: "username/repo-name" (e.g., "johndoe/do-ai-starterkit")
+app_source_repo = ""
+
+# =============================================================================
 # REQUIRED - DigitalOcean Credentials
 # =============================================================================
 

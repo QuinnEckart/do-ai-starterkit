@@ -31,6 +31,7 @@ terraform apply
 
 | Variable | Description |
 |----------|-------------|
+| `app_source_repo` | Your GitHub repo (e.g., `username/repo-name`) |
 | `do_token` | DigitalOcean API token |
 | `spaces_access_id` | Spaces access key |
 | `spaces_secret_key` | Spaces secret key |
