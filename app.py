@@ -1,5 +1,4 @@
 import os
-import json
 import hashlib
 from flask import Flask, render_template, request, jsonify
 import psycopg2
@@ -7,7 +6,7 @@ from psycopg2.extras import RealDictCursor
 import redis
 import boto3
 from botocore.client import Config
-import requests
+from openai import OpenAI
 
 app = Flask(__name__)
 
@@ -43,35 +42,35 @@ def get_spaces_client():
         config=Config(signature_version="s3v4")
     )
 
+def get_inference_client():
+    """Get OpenAI-compatible client for DigitalOcean GenAI."""
+    base_url = os.environ.get("GENAI_ENDPOINT", "")
+    api_key = os.environ.get("GENAI_API_KEY", "")
+    
+    if not base_url or not api_key:
+        return None
+    
+    return OpenAI(
+        base_url=base_url,
+        api_key=api_key
+    )
+
 def call_inference(messages):
-    """Call DigitalOcean GenAI / serverless inference."""
-    base_url = os.environ.get("SERVERLESS_INFERENCE_BASE_URL", "https://cloud.digitalocean.com/gen-ai")
+    """Call DigitalOcean GenAI serverless inference."""
+    client = get_inference_client()
     model = os.environ.get("DEFAULT_MODEL", "llama-3.1-70b-instruct")
-    api_token = os.environ.get("DO_API_TOKEN", "")
     
-    if not api_token:
-        return "Error: DO_API_TOKEN not configured for inference calls."
-    
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": model,
-        "messages": messages
-    }
+    if not client:
+        return "AI inference not configured. Set GENAI_ENDPOINT and GENAI_API_KEY environment variables."
     
     try:
-        response = requests.post(
-            f"{base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=1024,
+            temperature=0.7
         )
-        response.raise_for_status()
-        data = response.json()
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "No response")
+        return response.choices[0].message.content
     except Exception as e:
         return f"Inference error: {str(e)}"
 
@@ -117,6 +116,14 @@ def health():
         status["components"]["spaces"] = f"error: {str(e)}"
         status["status"] = "degraded"
     
+    genai_endpoint = os.environ.get("GENAI_ENDPOINT", "")
+    genai_key = os.environ.get("GENAI_API_KEY", "")
+    if genai_endpoint and genai_key:
+        status["components"]["genai"] = "configured"
+    else:
+        status["components"]["genai"] = "not configured"
+        status["status"] = "degraded"
+    
     return jsonify(status)
 
 @app.route("/api/chat", methods=["POST"])
@@ -129,7 +136,6 @@ def chat():
         return jsonify({"error": "Message is required"}), 400
     
     cache_key = get_cache_key(user_message)
-    cached_response = None
     
     try:
         vk = get_valkey_client()
@@ -145,7 +151,7 @@ def chat():
     messages = [
         {
             "role": "system",
-            "content": "You are a helpful AI assistant. Be concise and helpful."
+            "content": "You are a helpful AI assistant powered by DigitalOcean GenAI. Be concise and helpful."
         },
         {
             "role": "user",
@@ -203,15 +209,15 @@ def history():
         cur.close()
         conn.close()
         
-        history = []
+        history_list = []
         for row in rows:
-            history.append({
+            history_list.append({
                 "user_message": row["user_message"],
                 "assistant_response": row["assistant_response"],
                 "created_at": row["created_at"].isoformat() if row["created_at"] else None
             })
         
-        return jsonify({"history": history})
+        return jsonify({"history": history_list})
     except Exception as e:
         return jsonify({"error": str(e), "history": []})
 
