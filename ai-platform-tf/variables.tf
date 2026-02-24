@@ -181,15 +181,6 @@ variable "app_http_port" {
   default     = 8080
 }
 
-// =============================================================================
-// DIGITALOCEAN KNOWLEDGE BASE
-// =============================================================================
-
-variable "kb_uuid" {
-  description = "DigitalOcean Knowledge Base UUID (from GenAI Console)."
-  type        = string
-  default     = ""
-}
 
 // =============================================================================
 // GENAI / INFERENCE CONFIGURATION
@@ -215,52 +206,17 @@ variable "default_model" {
 }
 
 // =============================================================================
-// EMBEDDING CONFIGURATION
+// DIGITALOCEAN KNOWLEDGE BASE
 // =============================================================================
 
-variable "embedding_endpoint" {
-  description = "Endpoint for generating embeddings. Defaults to GENAI_ENDPOINT if not set."
+variable "kb_uuid" {
+  description = "DigitalOcean Knowledge Base UUID. Create one at: https://cloud.digitalocean.com/gen-ai/knowledge-bases"
   type        = string
   default     = ""
-}
-
-variable "embedding_api_key" {
-  description = "API key for the embedding endpoint. Defaults to GENAI_API_KEY if not set."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "embedding_model" {
-  description = "Model identifier for embeddings."
-  type        = string
-  default     = "bge-large-en-v1.5"
-}
-
-variable "embedding_dimensions" {
-  description = "Dimension size of embedding vectors (must match model output)."
-  type        = number
-  default     = 1024
-}
-
-// =============================================================================
-// RAG CONFIGURATION
-// =============================================================================
-
-variable "chunk_size" {
-  description = "Number of words per document chunk."
-  type        = number
-  default     = 512
-}
-
-variable "chunk_overlap" {
-  description = "Number of overlapping words between chunks."
-  type        = number
-  default     = 64
 }
 
 variable "rag_top_k" {
-  description = "Number of chunks to retrieve for RAG context."
+  description = "Number of results to retrieve from the Knowledge Base."
   type        = number
   default     = 5
 }

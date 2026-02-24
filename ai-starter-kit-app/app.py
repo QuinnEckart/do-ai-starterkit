@@ -5,8 +5,6 @@ from flask import Flask, render_template, request, jsonify
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import redis
-import boto3
-from botocore.client import Config
 import requests
 
 app = Flask(__name__)
@@ -15,8 +13,10 @@ app = Flask(__name__)
 # CONFIGURATION
 # =============================================================================
 
+KBAAS_BASE_URL = "https://kbaas.do-ai.run/v1"
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", 5))
-RAG_ALPHA = float(os.environ.get("RAG_ALPHA", 0.5))
+
+_schema_initialized = False
 
 # =============================================================================
 # CONNECTION HELPERS
@@ -40,61 +40,72 @@ def get_valkey_client():
         ssl=True
     )
 
-def init_db():
-    """Initialize chat history table."""
+def init_schema():
+    """Initialize database schema for chat history."""
+    global _schema_initialized
+    if _schema_initialized:
+        return True
+    
+    schema_sql = """
+    CREATE TABLE IF NOT EXISTS chat_history (
+        id SERIAL PRIMARY KEY,
+        user_message TEXT,
+        assistant_response TEXT,
+        sources JSONB DEFAULT '[]'::jsonb,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+    
     try:
         conn = get_pg_connection()
         cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS chat_history (
-                id SERIAL PRIMARY KEY,
-                user_message TEXT,
-                assistant_response TEXT,
-                sources JSONB DEFAULT '[]',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        cur.execute(schema_sql)
         conn.commit()
         cur.close()
         conn.close()
+        _schema_initialized = True
         return True
     except Exception as e:
-        app.logger.error(f"DB init failed: {e}")
+        app.logger.error(f"Schema init failed: {e}")
         return False
 
 # =============================================================================
 # DIGITALOCEAN KNOWLEDGE BASE API
 # =============================================================================
 
-def retrieve_from_do_kb(query, top_k=RAG_TOP_K, alpha=RAG_ALPHA):
-    """
-    Retrieve relevant chunks from DigitalOcean Knowledge Base API.
-    https://kbaas.do-ai.run/v1/<kb-uuid>/retrieve
-    """
-    kb_uuid = os.environ.get("KB_UUID", "")
-    do_token = os.environ.get("DO_API_TOKEN", "")
+def get_kb_uuid():
+    """Get the Knowledge Base UUID from environment."""
+    return os.environ.get("KB_UUID", "").strip()
+
+def get_do_token():
+    """Get the DigitalOcean API token."""
+    return os.environ.get("DO_API_TOKEN", "").strip()
+
+def retrieve_from_kb(query, top_k=RAG_TOP_K):
+    """Retrieve relevant documents from DigitalOcean Knowledge Base."""
+    kb_uuid = get_kb_uuid()
+    token = get_do_token()
     
-    if not kb_uuid or not do_token:
+    if not kb_uuid or not token:
         app.logger.warning("KB_UUID or DO_API_TOKEN not configured")
         return []
     
-    url = f"https://kbaas.do-ai.run/v1/{kb_uuid}/retrieve"
+    url = f"{KBAAS_BASE_URL}/{kb_uuid}/retrieve"
     headers = {
-        "Authorization": f"Bearer {do_token}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
     payload = {
         "query": query,
         "num_results": top_k,
-        "alpha": alpha
+        "alpha": 0.5  # Balance between semantic and keyword search
     }
     
     try:
-        app.logger.info(f"Querying DO KB: {kb_uuid}")
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         
         if response.status_code != 200:
-            app.logger.error(f"DO KB API error: {response.status_code} - {response.text[:200]}")
+            app.logger.error(f"KB retrieve error: {response.status_code} - {response.text[:300]}")
             return []
         
         data = response.json()
@@ -103,17 +114,103 @@ def retrieve_from_do_kb(query, top_k=RAG_TOP_K, alpha=RAG_ALPHA):
         formatted = []
         for r in results:
             formatted.append({
-                "content": r.get("text_content", ""),
-                "source": r.get("metadata", {}).get("item_name", "Unknown"),
-                "metadata": r.get("metadata", {})
+                "content": r.get("content", r.get("text", "")),
+                "source": r.get("source", r.get("metadata", {}).get("source", "unknown")),
+                "score": r.get("score", 0)
             })
         
-        app.logger.info(f"Retrieved {len(formatted)} chunks from DO KB")
         return formatted
-        
     except Exception as e:
-        app.logger.error(f"DO KB retrieve error: {e}")
+        app.logger.error(f"KB retrieve error: {e}")
         return []
+
+def upload_to_kb(filename, content):
+    """Upload a document to the DigitalOcean Knowledge Base."""
+    kb_uuid = get_kb_uuid()
+    token = get_do_token()
+    
+    if not kb_uuid or not token:
+        return {"error": "KB_UUID or DO_API_TOKEN not configured"}
+    
+    # Try the documents endpoint
+    url = f"{KBAAS_BASE_URL}/{kb_uuid}/documents"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "documents": [{
+            "content": content,
+            "metadata": {
+                "source": filename,
+                "filename": filename
+            }
+        }]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        
+        if response.status_code in [200, 201, 202]:
+            return {"status": "ok", "message": f"Uploaded {filename} to Knowledge Base"}
+        else:
+            error_msg = response.text[:300]
+            app.logger.error(f"KB upload error: {response.status_code} - {error_msg}")
+            return {"error": f"Upload failed: {error_msg}", "status_code": response.status_code}
+    except Exception as e:
+        app.logger.error(f"KB upload error: {e}")
+        return {"error": str(e)}
+
+def list_kb_documents():
+    """List documents in the Knowledge Base."""
+    kb_uuid = get_kb_uuid()
+    token = get_do_token()
+    
+    if not kb_uuid or not token:
+        return []
+    
+    url = f"{KBAAS_BASE_URL}/{kb_uuid}/documents"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("documents", [])
+        else:
+            app.logger.warning(f"KB list documents: {response.status_code}")
+            return []
+    except Exception as e:
+        app.logger.warning(f"KB list documents error: {e}")
+        return []
+
+def delete_kb_document(doc_id):
+    """Delete a document from the Knowledge Base."""
+    kb_uuid = get_kb_uuid()
+    token = get_do_token()
+    
+    if not kb_uuid or not token:
+        return {"error": "KB_UUID or DO_API_TOKEN not configured"}
+    
+    url = f"{KBAAS_BASE_URL}/{kb_uuid}/documents/{doc_id}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.delete(url, headers=headers, timeout=30)
+        
+        if response.status_code in [200, 204]:
+            return {"status": "ok"}
+        else:
+            return {"error": f"Delete failed: {response.text[:200]}"}
+    except Exception as e:
+        return {"error": str(e)}
 
 # =============================================================================
 # INFERENCE
@@ -158,8 +255,6 @@ def call_inference(messages):
                 return data["response"]
             elif "output" in data:
                 return data["output"]
-            else:
-                return f"Unexpected response: {str(data)[:300]}"
         except requests.exceptions.Timeout:
             return "Request timed out. Please try again."
         except Exception:
@@ -176,7 +271,7 @@ def get_cache_key(message, use_rag):
 
 @app.route("/")
 def index():
-    init_db()
+    init_schema()
     return render_template("index.html")
 
 @app.route("/health")
@@ -204,26 +299,28 @@ def health():
         status["components"]["valkey"] = f"error: {str(e)[:100]}"
         status["status"] = "degraded"
     
-    # GenAI Inference
+    # Inference
     if os.environ.get("GENAI_ENDPOINT") and os.environ.get("GENAI_API_KEY"):
         status["components"]["inference"] = "configured"
     else:
         status["components"]["inference"] = "demo mode"
     
-    # DO Knowledge Base
-    kb_uuid = os.environ.get("KB_UUID", "")
-    if kb_uuid:
+    # Knowledge Base
+    kb_uuid = get_kb_uuid()
+    if kb_uuid and get_do_token():
         status["components"]["knowledge_base"] = "configured"
-        status["knowledge_base"] = {"uuid": kb_uuid[:8] + "..."}
+        status["knowledge_base"] = {
+            "uuid": kb_uuid[:12] + "...",
+            "service": "DigitalOcean KBaaS"
+        }
     else:
         status["components"]["knowledge_base"] = "not configured"
-        status["knowledge_base"] = {"uuid": None}
     
     return jsonify(status)
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    init_db()
+    init_schema()
     data = request.get_json()
     user_message = data.get("message", "").strip()
     use_rag = data.get("use_rag", True)
@@ -243,32 +340,31 @@ def chat():
     except Exception:
         pass
     
-    # Retrieve context from DO Knowledge Base
     sources = []
     context_text = ""
     
+    # Retrieve from DO Knowledge Base
     if use_rag:
-        chunks = retrieve_from_do_kb(user_message)
-        if chunks:
+        contexts = retrieve_from_kb(user_message)
+        if contexts:
             context_parts = []
-            for i, chunk in enumerate(chunks):
-                source_name = chunk.get("source", "Unknown")
-                content = chunk.get("content", "")
-                context_parts.append(f"[{i+1}] From '{source_name}':\n{content}")
+            for i, ctx in enumerate(contexts):
+                source_name = ctx.get("source", "Document")
+                context_parts.append(f"[{i+1}] From '{source_name}':\n{ctx['content']}")
                 sources.append({
                     "source": source_name,
-                    "preview": content[:100] + "..." if len(content) > 100 else content
+                    "score": round(ctx.get("score", 0), 3)
                 })
             context_text = "\n\n".join(context_parts)
     
     # Build prompt
     if context_text:
-        system_prompt = """You are a helpful AI assistant with access to a knowledge base.
+        system_prompt = f"""You are a helpful AI assistant with access to a knowledge base.
 Answer questions based on the provided context. If the context doesn't contain relevant information, say so and provide a general answer.
 Always cite your sources by referencing the document names when using information from the context.
 
 Context from knowledge base:
-{context}""".format(context=context_text)
+{context_text}"""
     else:
         system_prompt = "You are a helpful AI assistant. Be concise and helpful."
     
@@ -278,7 +374,6 @@ Context from knowledge base:
     ]
     
     response_text = call_inference(messages)
-    
     result = {"response": response_text, "sources": sources, "cached": False}
     
     # Cache response
@@ -289,7 +384,7 @@ Context from knowledge base:
     except Exception:
         pass
     
-    # Save to history
+    # Save to chat history
     try:
         conn = get_pg_connection()
         cur = conn.cursor()
@@ -305,60 +400,73 @@ Context from knowledge base:
     
     return jsonify(result)
 
-@app.route("/api/test-kb", methods=["POST"])
-def test_kb():
-    """Test the DO Knowledge Base connection."""
-    kb_uuid = os.environ.get("KB_UUID", "")
-    do_token = os.environ.get("DO_API_TOKEN", "")
+@app.route("/api/documents", methods=["GET"])
+def list_documents():
+    """List documents in the Knowledge Base."""
+    docs = list_kb_documents()
+    return jsonify({"documents": docs, "source": "DigitalOcean Knowledge Base"})
+
+@app.route("/api/documents", methods=["POST"])
+def upload_document():
+    """Upload a document to the Knowledge Base."""
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
     
-    result = {
-        "kb_uuid": kb_uuid[:8] + "..." if kb_uuid else None,
-        "token_configured": bool(do_token)
-    }
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "No filename"}), 400
     
-    if not kb_uuid or not do_token:
-        result["status"] = "not_configured"
-        result["error"] = "KB_UUID or DO_API_TOKEN not set"
-        return jsonify(result)
+    filename = file.filename
+    content = file.read().decode("utf-8", errors="ignore")
     
-    # Test with a simple query
-    chunks = retrieve_from_do_kb("test query", top_k=1)
+    if not content.strip():
+        return jsonify({"error": "File is empty"}), 400
     
-    if chunks:
-        result["status"] = "success"
-        result["sample_result"] = chunks[0].get("source", "Unknown")
-    else:
-        result["status"] = "no_results"
-        result["message"] = "KB connected but no results returned. This could be normal if KB is empty."
+    result = upload_to_kb(filename, content)
+    
+    if "error" in result:
+        return jsonify(result), 400
     
     return jsonify(result)
 
-@app.route("/api/history", methods=["GET"])
-def history():
-    try:
-        conn = get_pg_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("""
-            SELECT user_message, assistant_response, sources, created_at 
-            FROM chat_history 
-            ORDER BY created_at DESC 
-            LIMIT 50
-        """)
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-        
-        history_list = []
-        for row in rows:
-            history_list.append({
-                "user_message": row["user_message"],
-                "assistant_response": row["assistant_response"],
-                "sources": row.get("sources", []),
-                "created_at": row["created_at"].isoformat() if row["created_at"] else None
-            })
-        return jsonify({"history": history_list})
-    except Exception as e:
-        return jsonify({"error": str(e), "history": []})
+@app.route("/api/documents/<doc_id>", methods=["DELETE"])
+def delete_document(doc_id):
+    """Delete a document from the Knowledge Base."""
+    result = delete_kb_document(doc_id)
+    
+    if "error" in result:
+        return jsonify(result), 400
+    
+    return jsonify(result)
+
+@app.route("/api/test-kb", methods=["POST"])
+def test_kb():
+    """Test the Knowledge Base connection."""
+    kb_uuid = get_kb_uuid()
+    token = get_do_token()
+    
+    result = {
+        "kb_uuid": kb_uuid[:12] + "..." if kb_uuid else "not set",
+        "token_configured": bool(token)
+    }
+    
+    if not kb_uuid or not token:
+        result["status"] = "not_configured"
+        result["message"] = "Set KB_UUID and DO_API_TOKEN environment variables"
+        return jsonify(result)
+    
+    # Test retrieve
+    contexts = retrieve_from_kb("test query")
+    
+    if contexts:
+        result["status"] = "success"
+        result["message"] = f"Retrieved {len(contexts)} results"
+        result["sample"] = contexts[0].get("content", "")[:100] + "..."
+    else:
+        result["status"] = "no_results"
+        result["message"] = "Connected but no results. KB may be empty or query didn't match."
+    
+    return jsonify(result)
 
 @app.route("/api/clear-cache", methods=["POST"])
 def clear_cache():

@@ -25,12 +25,6 @@ resource "digitalocean_app" "ai_app" {
 
       source_dir = "/ai-starter-kit-app"
 
-      # Knowledge Base Configuration
-      env {
-        key   = "KB_UUID"
-        value = var.kb_uuid
-      }
-
       # Inference Configuration
       env {
         key   = "GENAI_ENDPOINT"
@@ -48,37 +42,10 @@ resource "digitalocean_app" "ai_app" {
         value = var.default_model
       }
 
-      # Embedding Configuration
+      # DigitalOcean Knowledge Base
       env {
-        key   = "EMBEDDING_ENDPOINT"
-        value = var.embedding_endpoint != "" ? var.embedding_endpoint : var.genai_endpoint
-      }
-
-      env {
-        key   = "EMBEDDING_API_KEY"
-        value = var.embedding_api_key != "" ? var.embedding_api_key : var.genai_api_key
-        type  = "SECRET"
-      }
-
-      env {
-        key   = "EMBEDDING_MODEL"
-        value = var.embedding_model
-      }
-
-      env {
-        key   = "EMBEDDING_DIMENSIONS"
-        value = tostring(var.embedding_dimensions)
-      }
-
-      # RAG Configuration
-      env {
-        key   = "CHUNK_SIZE"
-        value = tostring(var.chunk_size)
-      }
-
-      env {
-        key   = "CHUNK_OVERLAP"
-        value = tostring(var.chunk_overlap)
+        key   = "KB_UUID"
+        value = var.kb_uuid
       }
 
       env {

@@ -24,9 +24,17 @@ spaces_secret_key = "your_spaces_secret_key"
 # REQUIRED - GenAI Configuration
 # =============================================================================
 
-# DigitalOcean GenAI endpoint or any OpenAI-compatible endpoint
-genai_endpoint = "https://your-agent.ondigitalocean.app"
-genai_api_key  = "your_genai_api_key"
+# DigitalOcean GenAI Agent endpoint (create at: https://cloud.digitalocean.com/gen-ai/agents)
+genai_endpoint = "https://your-agent.agents.do-ai.run"
+genai_api_key  = "your_agent_api_key"
+
+# =============================================================================
+# REQUIRED - DigitalOcean Knowledge Base
+# =============================================================================
+
+# Create a Knowledge Base at: https://cloud.digitalocean.com/gen-ai/knowledge-bases
+# Copy the UUID from the KB details page
+kb_uuid = "your-kb-uuid-here"
 
 # =============================================================================
 # OPTIONAL - Customize Your Deployment
@@ -38,15 +46,11 @@ genai_api_key  = "your_genai_api_key"
 # Region for deployment
 # region = "nyc3"
 
-# Model configuration
-# default_model     = "llama-3.1-70b-instruct"
-# embedding_model   = "bge-large-en-v1.5"
+# Model configuration for chat
+# default_model = "llama-3.1-70b-instruct"
 
 # RAG tuning
-# chunk_size        = 512    # Words per chunk
-# chunk_overlap     = 64     # Overlap between chunks
-# rag_top_k         = 5      # Number of chunks to retrieve
-# cache_ttl_seconds = 3600   # Cache TTL (1 hour)
+# rag_top_k = 5  # Number of results to retrieve from KB
 
 # Database sizing (adjust based on your workload)
 # pg_size_slug     = "db-s-2vcpu-4gb"   # PostgreSQL size

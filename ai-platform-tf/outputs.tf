@@ -47,12 +47,12 @@ output "quick_start" {
     🌐 App URL: ${digitalocean_app.ai_app.live_url}
     
     Next steps:
-    1. Open the app URL in your browser
-    2. Go to "Knowledge Base" tab
-    3. Upload your documents (.txt, .md, .json, .csv, .html)
-    4. Start asking questions in the Chat tab!
+    1. Add documents to your Knowledge Base via the DO GenAI Console
+       https://cloud.digitalocean.com/gen-ai/knowledge-bases
+    2. Open the app URL in your browser
+    3. Start asking questions - responses are grounded in your KB!
     
-    📚 Documents are automatically chunked and embedded for semantic search.
+    📚 Documents are embedded using DigitalOcean's GTE Large model.
     
   EOT
 }
