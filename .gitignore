@@ -1,0 +1,18 @@
+# Terraform files (should not be in app repo)
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.tfvars
+.terraform/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
