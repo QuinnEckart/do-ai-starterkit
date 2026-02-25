@@ -1,60 +1,7 @@
-app_source_repo   = ""
-do_token          = ""
-spaces_access_id  = ""
-spaces_secret_key = ""
-
-# =============================================================================
-# REQUIRED - GitHub Repository
-# =============================================================================
-
-# Your GitHub repo containing the ai-starter-kit-app code
-# Format: "username/repo-name" (e.g., "johndoe/do-ai-starterkit")
-app_source_repo = ""
-
-# =============================================================================
-# REQUIRED - DigitalOcean Credentials
-# =============================================================================
-
-# Your DigitalOcean API token (https://cloud.digitalocean.com/account/api/tokens)
-do_token = "dop_v1_your_api_token_here"
-
-# Spaces access keys (https://cloud.digitalocean.com/spaces -> Manage Keys)
+app_source_repo   = "YOUR_GITHUB_USERNAME/do-ai-starterkit"
+do_token          = "dop_v1_your_token_here"
 spaces_access_id  = "your_spaces_access_key"
 spaces_secret_key = "your_spaces_secret_key"
 
-# =============================================================================
-# OPTIONAL - GenAI Agent Configuration
-# =============================================================================
-
-# Custom instruction for your AI agent
-# agent_instruction = "You are a helpful AI assistant..."
-
-# Model temperature (0.0 = deterministic, 1.0 = creative)
-# agent_temperature = 0.7
-
-# Maximum response tokens
-# agent_max_tokens = 1024
-
-# =============================================================================
-# OPTIONAL - Customize Your Deployment
-# =============================================================================
-
-# Stack name (used as prefix for all resources)
-# stack_name = "ai-platform"
-
-# Region for deployment
-# region = "nyc3"
-
-# RAG settings
-# rag_top_k = 5  # Number of KB results to retrieve
-
-# Database sizing (adjust based on your workload)
-# pg_size_slug     = "db-s-2vcpu-4gb"   # PostgreSQL size
-# valkey_size_slug = "db-s-1vcpu-1gb"   # Valkey (cache) size
-
-# App Platform sizing
-# app_instance_size = "basic-xxs"
-
-# Alerting
-# enable_uptime_alert = true
-# alert_email = "your-email@example.com"
+genai_endpoint    = "https://your-agent-id.agents.do-ai.run"
+genai_api_key     = "your_agent_api_key"

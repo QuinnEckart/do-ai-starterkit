@@ -9,8 +9,8 @@ An opinionated, deploy-ready starter kit that uses DigitalOcean cloud primitives
 Run `terraform apply` and in ~5 minutes you have:
 
 - **AI Chat Interface** - Modern web UI for conversing with AI
-- **RAG Pipeline** - Upload documents, automatic chunking & embedding, semantic search
-- **Knowledge Base** - PostgreSQL with pgvector for vector similarity search
+- **RAG Pipeline** - Knowledge Base with automatic embedding & semantic search
+- **Gradient AI Agent** - DigitalOcean-managed LLM with your KB attached
 - **Response Caching** - Valkey (Redis-compatible) reduces redundant API calls
 - **Document Storage** - Spaces bucket for file persistence
 - **Health Monitoring** - Built-in observability endpoints
@@ -22,15 +22,15 @@ Run `terraform apply` and in ~5 minutes you have:
 │                     DigitalOcean Cloud                          │
 │                                                                 │
 │  ┌─────────────────┐         ┌──────────────────┐               │
-│  │  App Platform   │────────►│ GenAI / Inference│               │
-│  │  (Flask + RAG)  │         │    Endpoint      │               │
+│  │  App Platform   │────────►│  Gradient AI     │               │
+│  │  (Flask + UI)   │         │  Agent + KB      │               │
 │  └────────┬────────┘         └──────────────────┘               │
 │           │                                                     │
 │     ┌─────┴─────┬─────────────┐                                 │
 │     ▼           ▼             ▼                                 │
 │  ┌──────┐   ┌───────┐   ┌──────────┐                            │
 │  │ PG16 │   │Valkey │   │  Spaces  │                            │
-│  │pgvec │   │(Cache)│   │ (Docs)   │                            │
+│  │(hist)│   │(Cache)│   │ (Docs)   │                            │
 │  └──────┘   └───────┘   └──────────┘                            │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -41,93 +41,107 @@ Run `terraform apply` and in ~5 minutes you have:
 
 - [DigitalOcean account](https://cloud.digitalocean.com/registrations/new)
 - [Terraform](https://www.terraform.io/downloads) >= 1.5.0
-- [DigitalOcean API token](https://cloud.digitalocean.com/account/api/tokens) (write scope)
-- [Spaces access keys](https://cloud.digitalocean.com/spaces) (for object storage)
-- GenAI endpoint (DigitalOcean GenAI, OpenAI, or any compatible API)
+- GitHub account (for App Platform auto-deploy)
 
-### Deploy in 4 Steps
+### Step 1: Fork and Clone
+
+1. Fork this repo on GitHub: Click "Fork" button at top right
+2. Clone your fork:
 
 ```bash
-# 1. Fork/clone and push to your GitHub
-# Fork this repo on GitHub, then:
-git clone https://github.com/YOUR_USERNAME/ai-starter-kit.git
-cd ai-starter-kit
-git remote set-url origin https://github.com/YOUR_USERNAME/ai-starter-kit.git
-git push -u origin main
-
-# 2. Configure Terraform
-cd ai-platform-tf
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your credentials
-
-# 3. Deploy
-terraform init
-terraform apply
-# Terraform will prompt for your GitHub repo (e.g., "your-username/ai-starter-kit")
-
-# 4. Open your app
-# Terraform outputs the live URL - open it in your browser!
+git clone https://github.com/YOUR_USERNAME/do-ai-starterkit.git
+cd do-ai-starterkit
 ```
 
-### The Timeline
+### Step 2: Get Your DigitalOcean Credentials
 
-| Day | What Happens |
-|-----|--------------|
-| **Day 1** | Run `terraform apply`. 5 minutes later: live chat interface with RAG pipeline, caching, and monitoring. Knowledge base is empty but the stack is running. |
-| **Day 2** | Upload your documents via the UI. They're automatically chunked and embedded. Start asking questions grounded in your data. |
-| **Day 3+** | Tune `terraform.tfvars`: adjust chunk size, cache TTL, model selection. Git push to auto-redeploy. |
+You need 4 credentials from DigitalOcean:
 
-## Using the App
+**API Token:**
+1. Go to https://cloud.digitalocean.com/account/api/tokens
+2. Click "Generate New Token"
+3. Name it (e.g., "ai-starterkit"), select "Write" scope
+4. Copy the token (starts with `dop_v1_`)
 
-### Chat Tab
-Ask questions in natural language. When "Search knowledge base" is checked, your query is embedded and matched against your documents using vector similarity. The most relevant chunks are included as context for the AI.
+**Spaces Keys:**
+1. Go to https://cloud.digitalocean.com/spaces
+2. Click "Manage Keys" in the sidebar
+3. Click "Generate New Key"
+4. Copy both the Access Key and Secret Key
 
-### Knowledge Base Tab
-Drag & drop documents to upload. Supported formats: `.txt`, `.md`, `.json`, `.csv`, `.html`. Documents are automatically:
-1. Stored in Spaces
-2. Split into overlapping chunks
-3. Embedded using your configured model
-4. Indexed in pgvector for semantic search
+**GenAI Agent:**
+1. Go to https://cloud.digitalocean.com/gen-ai/agents
+2. Create a new agent or use an existing one
+3. Copy the Agent Endpoint URL (e.g., `https://xxxxx.agents.do-ai.run`)
+4. Copy the API Key
+
+### Step 3: Configure Terraform
+
+```bash
+cd ai-platform-tf
+cp terraform.tfvars.example terraform.tfvars
+```
+
+Edit `terraform.tfvars` with your actual values:
+
+```hcl
+app_source_repo   = "YOUR_GITHUB_USERNAME/do-ai-starterkit"
+do_token          = "dop_v1_your_actual_token_here"
+spaces_access_id  = "your_spaces_access_key"
+spaces_secret_key = "your_spaces_secret_key"
+
+genai_endpoint    = "https://your-agent-id.agents.do-ai.run"
+genai_api_key     = "your_agent_api_key"
+```
+
+### Step 4: Deploy
+
+```bash
+terraform init
+terraform apply
+```
+
+Type `yes` when prompted. Wait ~5 minutes for all resources to provision.
+
+### Step 5: Access Your App
+
+After deployment completes, get your app URL:
+
+```bash
+terraform output app_live_url
+```
+
+Open the URL in your browser!
+
+## Adding Documents to Your Knowledge Base
+
+1. Go to https://cloud.digitalocean.com/gen-ai/knowledge-bases
+2. Click on your Knowledge Base (created by Terraform)
+3. Click "Add Data Source"
+4. Upload your documents (.txt, .pdf, .md, etc.)
+5. Wait for indexing to complete
+6. Go back to your app and start asking questions!
 
 ## Configuration
 
-### terraform.tfvars
+### terraform.tfvars Options
 
 ```hcl
 # Required
-do_token          = "dop_v1_..."
-spaces_access_id  = "..."
-spaces_secret_key = "..."
-genai_endpoint    = "https://your-endpoint"
-genai_api_key     = "..."
+app_source_repo   = "username/repo"      # Your GitHub repo
+do_token          = "dop_v1_..."          # DO API token
+spaces_access_id  = "..."                 # Spaces access key
+spaces_secret_key = "..."                 # Spaces secret key
+genai_endpoint    = "https://..."         # Agent endpoint URL
+genai_api_key     = "..."                 # Agent API key
 
-# Optional - tune RAG behavior
-chunk_size        = 512    # Words per chunk
-chunk_overlap     = 64     # Overlap between chunks
-rag_top_k         = 5      # Chunks to retrieve
-cache_ttl_seconds = 3600   # 1 hour cache
-
-# Optional - model selection
-default_model     = "llama-3.1-70b-instruct"
-embedding_model   = "bge-large-en-v1.5"
+# Optional - scaling
+pg_size_slug      = "db-s-2vcpu-4gb"      # PostgreSQL size
+valkey_size_slug  = "db-s-1vcpu-1gb"      # Cache size
+app_instance_size = "basic-xxs"           # App Platform size
 ```
 
 See [`ai-platform-tf/variables.tf`](ai-platform-tf/variables.tf) for all options.
-
-### Environment Variables Reference
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GENAI_ENDPOINT` | Inference API endpoint | - |
-| `GENAI_API_KEY` | Inference API key | - |
-| `DEFAULT_MODEL` | Model for chat completion | `llama-3.1-70b-instruct` |
-| `EMBEDDING_ENDPOINT` | Embedding API endpoint | Falls back to `GENAI_ENDPOINT` |
-| `EMBEDDING_MODEL` | Model for embeddings | `bge-large-en-v1.5` |
-| `EMBEDDING_DIMENSIONS` | Vector dimensions | `1024` |
-| `CHUNK_SIZE` | Words per document chunk | `512` |
-| `CHUNK_OVERLAP` | Overlap between chunks | `64` |
-| `RAG_TOP_K` | Chunks to retrieve | `5` |
-| `CACHE_TTL_SECONDS` | Response cache TTL | `3600` |
 
 ## API Endpoints
 
@@ -136,11 +150,7 @@ See [`ai-platform-tf/variables.tf`](ai-platform-tf/variables.tf) for all options
 | `/` | GET | Web interface |
 | `/health` | GET | Health check with component status |
 | `/api/chat` | POST | Send message (with optional RAG) |
-| `/api/documents` | GET | List uploaded documents |
-| `/api/documents` | POST | Upload a document |
-| `/api/documents/:id` | DELETE | Delete a document |
-| `/api/search` | POST | Direct semantic search |
-| `/api/history` | GET | Chat history |
+| `/api/test-kb` | POST | Test Knowledge Base connection |
 | `/api/clear-cache` | POST | Clear response cache |
 
 ### Example: Chat with RAG
@@ -148,22 +158,7 @@ See [`ai-platform-tf/variables.tf`](ai-platform-tf/variables.tf) for all options
 ```bash
 curl -X POST https://your-app.ondigitalocean.app/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "What are the key terms in the contract?", "use_rag": true}'
-```
-
-### Example: Upload Document
-
-```bash
-curl -X POST https://your-app.ondigitalocean.app/api/documents \
-  -F "file=@contract.txt"
-```
-
-### Example: Semantic Search
-
-```bash
-curl -X POST https://your-app.ondigitalocean.app/api/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "liability clauses", "top_k": 10}'
+  -d '{"message": "What is in the knowledge base?", "use_rag": true}'
 ```
 
 ## Local Development
@@ -185,43 +180,29 @@ python app.py
 # Open http://localhost:8080
 ```
 
-**Demo Mode**: If `GENAI_ENDPOINT` is not set, the app runs in demo mode, echoing messages without AI inference.
-
 ## Project Structure
 
 ```
-ai-starter-kit/
+do-ai-starterkit/
 ├── README.md
 ├── ai-starter-kit-app/           # Flask application
-│   ├── app.py                    # Main app with RAG pipeline
+│   ├── app.py                    # Main app with KB integration
 │   ├── requirements.txt
 │   ├── Procfile
-│   ├── .env.example
 │   └── templates/
-│       └── index.html            # Chat + document upload UI
+│       └── index.html            # Chat UI
 └── ai-platform-tf/               # Terraform infrastructure
     ├── provider.tf
     ├── variables.tf
     ├── terraform.tfvars.example
-    ├── app.tf                    # App Platform + env vars
-    ├── postgres.tf               # PostgreSQL (pgvector)
+    ├── app.tf                    # App Platform
+    ├── genai.tf                  # Gradient AI Agent + KB
+    ├── postgres.tf               # PostgreSQL (chat history)
     ├── valkey.tf                 # Cache
     ├── bucket.tf                 # Spaces
     ├── outputs.tf
-    ├── projects.tf
-    ├── tags.tf
-    └── uptime.tf
+    └── deploy.ps1                # Windows deploy script
 ```
-
-## How RAG Works
-
-1. **Document Upload**: Files are stored in Spaces and inserted into PostgreSQL
-2. **Chunking**: Documents are split into overlapping chunks (default: 512 words, 64 overlap)
-3. **Embedding**: Each chunk is embedded using the configured model (default: BGE-large, 1024 dimensions)
-4. **Storage**: Embeddings are stored in pgvector for efficient similarity search
-5. **Query**: User questions are embedded and matched against chunks using cosine similarity
-6. **Context**: Top-k most similar chunks are retrieved and included in the prompt
-7. **Response**: The AI generates an answer grounded in the retrieved context
 
 ## Cost Estimate
 
@@ -231,25 +212,33 @@ ai-starter-kit/
 | PostgreSQL | db-s-2vcpu-4gb | ~$60 |
 | Valkey | db-s-1vcpu-1gb | ~$15 |
 | Spaces | Per usage | ~$5+ |
-| **Total** | | **~$85/month** |
-
-Adjust `pg_size_slug`, `valkey_size_slug`, and `app_instance_size` to scale.
+| Gradient AI | Per usage | Variable |
+| **Total** | | **~$85/month + AI usage** |
 
 ## Cleanup
+
+To destroy all resources:
 
 ```bash
 cd ai-platform-tf
 terraform destroy
 ```
 
-## What's Next
+Type `yes` when prompted.
 
-This starter kit provides the foundation. Extend it with:
+## Troubleshooting
 
-- **Guardrails**: Add PII detection, topic boundaries, prompt injection filtering
-- **Model Router**: Route simple queries to smaller models, complex ones to larger
-- **Batch Processing**: Scheduled jobs for bulk document processing
-- **MCP Server**: Connect external tools and APIs for agentic workflows
+**"BucketAlreadyExists" error:**
+```bash
+terraform import digitalocean_spaces_bucket.bucket nyc3,BUCKET_NAME
+terraform apply
+```
+
+**App shows "Demo Mode":**
+Check that `genai_endpoint` and `genai_api_key` are set in terraform.tfvars, then run `terraform apply` again.
+
+**DNS not resolving:**
+Wait 1-2 minutes for DNS propagation, or try incognito mode.
 
 ## License
 
