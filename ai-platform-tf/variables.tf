@@ -192,6 +192,19 @@ variable "default_model" {
   default     = "llama-3.1-70b-instruct"
 }
 
+variable "genai_endpoint" {
+  description = "GenAI Agent endpoint URL. Leave empty to use auto-created agent, or set manually."
+  type        = string
+  default     = ""
+}
+
+variable "genai_api_key" {
+  description = "API key for the GenAI Agent. Get this from the DO Console after agent creation."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 // =============================================================================
 // GENAI AGENT CONFIGURATION
 // =============================================================================

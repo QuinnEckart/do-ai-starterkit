@@ -25,15 +25,15 @@ resource "digitalocean_app" "ai_app" {
 
       source_dir = "/ai-starter-kit-app"
 
-      # GenAI Agent (auto-created)
+      # Gradient AI Agent
       env {
         key   = "GENAI_ENDPOINT"
-        value = digitalocean_genai_agent.agent.url
+        value = var.genai_endpoint != "" ? var.genai_endpoint : (digitalocean_gradientai_agent.agent.url != null ? digitalocean_gradientai_agent.agent.url : "")
       }
 
       env {
         key   = "GENAI_API_KEY"
-        value = length(digitalocean_genai_agent.agent.api_keys) > 0 ? digitalocean_genai_agent.agent.api_keys[0].key : ""
+        value = var.genai_api_key
         type  = "SECRET"
       }
 
@@ -45,7 +45,7 @@ resource "digitalocean_app" "ai_app" {
       # Knowledge Base (auto-created)
       env {
         key   = "KB_UUID"
-        value = digitalocean_genai_knowledge_base.kb.id
+        value = digitalocean_gradientai_knowledge_base.kb.id
       }
 
       env {
