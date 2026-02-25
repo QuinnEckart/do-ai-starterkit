@@ -1,5 +1,7 @@
-# DigitalOcean AI Platform - Terraform Configuration
-# Copy this file to terraform.tfvars and fill in your values
+app_source_repo   = ""
+do_token          = ""
+spaces_access_id  = ""
+spaces_secret_key = ""
 
 # =============================================================================
 # REQUIRED - GitHub Repository
